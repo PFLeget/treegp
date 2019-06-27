@@ -337,7 +337,7 @@ class GPInterp2pcf(object):
         self._2pcf_mask.append(mask)
         return kernel
 
-    def return_gp_predict(self, y, X1, X2, kernel, y_err):
+    def return_gp_predict(self, y, X1, X2, kernel, y_err, return_cov=False):
         """Compute interpolation with gaussian process for a given kernel.
 
         :param y:  The dependent responses.  (n_samples, n_targets)
@@ -350,8 +350,15 @@ class GPInterp2pcf(object):
         K = kernel.__call__(X1) + np.eye(len(y))*y_err**2
         factor = (cholesky(K, overwrite_a=True, lower=False), False)
         alpha = cho_solve(factor, y, overwrite_b=False)
-        return np.dot(HT,alpha.reshape((len(alpha),1))).T[0]
+        y_predict = np.dot(HT,alpha.reshape((len(alpha),1))).T[0]
 
+        if return_cov:
+            L_ = cholesky(K, lower=True)
+            v = cho_solve((L_, True), HT.T)
+            y_cov = kernel.__call__(X2) - HT.dot(v)
+            return y_predict, y_cov
+        else:
+            return y_predict
 
     def initialize(self, logger=None):
         """Initialize both the interpolator to some state prefatory to any solve iterations and
