@@ -11,6 +11,9 @@ treegp/*.py~
 
 README.rst~
 
+TODO.txt~
+tests/output/
+
 .gitignore~
 requirements.txt~
 
