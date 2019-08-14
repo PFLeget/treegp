@@ -9,6 +9,9 @@ treegp/*.py~
 .gitignore~
 requirements.txt~
 
+tests/*.py~
+tests/*.pyc
+
 # C extensions
 *.so
 
