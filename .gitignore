@@ -6,6 +6,11 @@ __pycache__/
 treegp/*.pyc
 treegp/*.py~
 
+*.pyc
+*.py~
+
+README.rst~
+
 .gitignore~
 requirements.txt~
 
