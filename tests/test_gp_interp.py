@@ -10,7 +10,7 @@ import yaml
 import fitsio
 import treegp
 
-from test_helper import timer
+from treegp_test_helper import timer
 
 fiducial_kolmogorov = galsim.Kolmogorov(half_light_radius=1.0)
 mod = piff.GSObjectModel(fiducial_kolmogorov, force_model_center=False, include_pixel=False,
