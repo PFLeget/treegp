@@ -1,0 +1,5 @@
+- Make tests run as in Piff 
+- Make notebook from de_school work with treegp 
+- Make tests work again and split them in terms of gp_interp / hyperparameters fitting / mean function /kernels
+- Add travis/codecov
+- Write the paper !
