@@ -8,8 +8,9 @@ import os
 import subprocess
 import yaml
 import fitsio
+import treegp
 
-from piff_test_helper import get_script_name, timer
+from test_helper import timer
 
 fiducial_kolmogorov = galsim.Kolmogorov(half_light_radius=1.0)
 mod = piff.GSObjectModel(fiducial_kolmogorov, force_model_center=False, include_pixel=False,
@@ -241,7 +242,7 @@ def make_vonkarman_psf_params(ntrain, nvalidate, nvisualize, scale_length=2.):
     fluxes += [1.0] * nvisualize**2
 
     # Next, generate input data by drawing from a single Gaussian Random Field.
-    kernel = 0.1**2 * piff.VonKarman(length_scale = scale_length)
+    kernel = 0.1**2 * treegp.VonKarman(length_scale = scale_length)
     cov = kernel.__call__(np.array([us, vs]).T)
 
     params['u'] = us
@@ -299,7 +300,7 @@ def make_vonkarman_and_rbf_psf_params(ntrain, nvalidate, nvisualize, scale_lengt
     cov_pos = 0.1**2 * np.exp(-0.5*dists**2/scale_length**2)
 
     # Next, generate input data by drawing from a single Gaussian Random Field.
-    kernel = 0.1**2 * piff.VonKarman(length_scale = scale_length)
+    kernel = 0.1**2 * treegp.VonKarman(length_scale = scale_length)
     cov = kernel.__call__(np.array([us, vs]).T)    
 
     params['u'] = us
@@ -610,59 +611,9 @@ def validate(validate_stars, interp, rtol=0.02):
             axes[2].imshow(s1.image.array - s0.image.array)
             plt.show()
 
-
-def check_gp(training_data, validation_data, visualization_data,
-             kernel, npca=0, optimize=False, file_name=None, rng=None,
-             visualize=False, check_config=False, rtol=0.02):
-    """ Solve for global PSF model, test it, and optionally display it.
-    """
-    stars = params_to_stars(training_data, noise=0.03, rng=rng)
-    validate_stars = params_to_stars(validation_data, noise=0.0, rng=rng)
-    interp = piff.GPInterp(kernel=kernel, optimize=optimize, npca=npca)
-    interp.initialize(stars)
-    iterate(stars, interp)
-    if visualize:
-        display(training_data, visualization_data, interp)
-    validate(validate_stars, interp, rtol=rtol)
-
-    if check_config:
-        config = {
-            'interp' : {
-                'type' : 'GPInterp',
-                'kernel' : kernel,
-                'npca' : npca,
-                'optimize' : optimize
-            }
-        }
-        logger = piff.config.setup_logger()
-        interp3 = piff.Interp.process(config['interp'], logger)
-        iterate(stars, interp3)
-        validate(validate_stars, interp3, rtol=rtol)
-
-    # Check that we can write interp to disk and read back in.
-    if file_name is not None:
-        testfile = os.path.join('output', file_name)
-        with fitsio.FITS(testfile, 'rw', clobber=True) as f:
-            interp.write(f, 'interp')
-        with fitsio.FITS(testfile, 'r') as f:
-            interp2 = piff.GPInterp.read(f, 'interp')
-        print("Revalidating after i/o.")
-        X = np.vstack([training_data['u'], training_data['v']]).T
-        np.testing.assert_allclose(interp.gp.kernel(X), interp2.gp.kernel(X))
-        np.testing.assert_allclose(interp.gp.kernel.theta, interp2.gp.kernel.theta)
-        np.testing.assert_allclose(interp.gp.kernel_.theta, interp2.gp.kernel_.theta)
-        np.testing.assert_allclose(interp.gp.alpha_, interp2.gp.alpha_, rtol=1e-6, atol=1.e-7)
-        np.testing.assert_allclose(interp.gp.X_train_, interp2.gp.X_train_)
-        if hasattr(interp.gp, '_y_train_mean'):
-            np.testing.assert_allclose(interp.gp._y_train_mean, interp2.gp._y_train_mean)
-        else:
-            np.testing.assert_allclose(interp.gp.y_train_mean, interp2.gp.y_train_mean)
-        validate(validate_stars, interp2, rtol=rtol)
-
-
 def check_gp_2pcf(training_data, validation_data, visualization_data,
-                  kernel, npca=0, optimize=False, anisotropic=False, file_name=None, rng=None,
-                  visualize=False, check_config=False, rtol=0.02):
+                  kernel, optimize=False, anisotropic=False, file_name=None, rng=None,
+                  visualize=False, rtol=0.02):
     """ Solve for global PSF model, test it, and optionally display it.
     """
     stars = params_to_stars(training_data, noise=0.03, rng=rng)
@@ -675,57 +626,20 @@ def check_gp_2pcf(training_data, validation_data, visualization_data,
         nbins = 20
         MIN = 0.1
         MAX = 0.6
-    interp = piff.GPInterp2pcf(kernel=kernel, optimize=optimize, anisotropic=anisotropic,
-                               npca=npca, nbins=nbins, min_sep=MIN, max_sep=MAX, white_noise=1e-5)
+    interp = treegp.GPInterp2pcf(kernel=kernel, optimize=optimize, anisotropic=anisotropic,
+                                 nbins=nbins, min_sep=MIN, max_sep=MAX, white_noise=1e-5)
     interp.initialize(stars)
     iterate_2pcf(stars, interp)
     if visualize:
         display(training_data, visualization_data, interp)
     validate(validate_stars, interp, rtol=rtol)
 
-    if check_config:
-        config = {
-            'interp' : {
-                'type' : 'GPInterp2pcf',
-                'kernel' : kernel,
-                'npca' : npca,
-                'optimize' : optimize,
-                'white_noise': 1e-5,
-                'nbins': nbins,
-                'anisotropic': anisotropic
-            }
-        }
-        print(config)
-        logger = piff.config.setup_logger()
-        interp3 = piff.Interp.process(config['interp'], logger)
-        iterate_2pcf(stars, interp3)
-        validate(validate_stars, interp3, rtol=rtol)
-
-    # Check that we can write interp to disk and read back in.
-    if file_name is not None:
-        testfile = os.path.join('output', file_name)
-        with fitsio.FITS(testfile, 'rw', clobber=True) as f:
-            interp.write(f, 'interp')
-        with fitsio.FITS(testfile, 'r') as f:
-            interp2 = piff.GPInterp2pcf.read(f, 'interp')
-        print("Revalidating after i/o.")
-        X = np.vstack([training_data['u'], training_data['v']]).T
-        for i in range(interp.nparams):
-            np.testing.assert_allclose(interp.kernels[i].__call__(X), interp2.kernels[i].__call__(X))
-            np.testing.assert_allclose(interp._init_theta[i], interp2._init_theta[i])
-            np.testing.assert_allclose(interp.kernels[i].theta, interp2.kernels[i].theta)
-            np.testing.assert_allclose(interp._X, interp2._X)
-            np.testing.assert_allclose(interp._mean[i], interp2._mean[i],atol=1e-12)
-        validate(validate_stars, interp2, rtol=rtol)
-
 
 @timer
 def test_constant_psf():
     if __name__ == '__main__':
-        npcas = [0, 2]
         optimizes = [True, False]
     else:
-        npcas = [2]
         optimizes = [True]
     ntrain, nvalidate, nvisualize = 100, 1, 21
     rng = galsim.BaseDeviate(572958179)
@@ -737,23 +651,18 @@ def test_constant_psf():
     # We probably aren't measuring fwhm, g1, g2, etc. to better than 1e-5...
     #kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel,
-                     npca=npca, optimize=optimize, rng=rng, check_config=True)
-            check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
-                          npca=npca, optimize=optimize, rng=rng, check_config=True)
+    for optimize in optimizes:
+        check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
+                      optimize=optimize, rng=rng)
 
 
 @timer
 def test_polynomial_psf():
     if __name__ == '__main__':
         ntrain = 200
-        npcas = [0, 2]
         optimizes = [True, False]
     else:
         ntrain = 100
-        npcas = [0]
         optimizes = [False]
     nvalidate, nvisualize = 1, 21
     rng = galsim.BaseDeviate(1203985)
@@ -765,27 +674,18 @@ def test_polynomial_psf():
     # white noise
     #kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel,
-                     npca=npca, optimize=optimize, rng=rng)
-            if npca == 0:
-                check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
-                              npca=npca, optimize=optimize, rng=rng)
-
+    for optimize in optimizes:
+        check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
+                      optimize=optimize, rng=rng)
 
 @timer
 def test_grf_psf():
     if __name__ == '__main__':
         ntrain = 200
-        npcas = [0]
         optimizes = [True, False]
-        check_config = True
     else:
         ntrain = 100
-        npcas = [0]
         optimizes = [False]
-        check_config = False
     nvalidate, nvisualize = 1, 21
     rng = galsim.BaseDeviate(987654334587656)
 
@@ -797,51 +697,19 @@ def test_grf_psf():
     # white noise
     #kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel+" + WhiteKernel(1e-5, (1e-7, 1e-1))",
-                     npca=npca, optimize=optimize, file_name="test_gp_grf.fits", rng=rng,
-                     check_config=check_config)
-            check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
-                          npca=npca, optimize=optimize, anisotropic=False, file_name="test_gp_grf.fits", rng=rng,
-                          check_config=check_config)
-
-    # Check ExplicitKernel here too
-    #
-    # We could in principal use any function of dx, dy here, for instance a galsim.LookupTable2D.
-    # For simplicity, though, just assert a Gaussian == SquaredExponential with scale-length
-    # of 0.3.
-    kernel = "ExplicitKernel('np.exp(-0.5*(du**2+dv**2)/0.3**2)')"
-    kernel += " + WhiteKernel(1e-5)"
-    # No optimize loop, since ExplicitKernel is not optimizable.
-    for npca in npcas:
-        check_gp(training_data, validation_data, visualization_data, kernel,
-                 npca=npca, file_name="test_explicit_grf.fits", rng=rng,
-                 check_config=check_config)
-
-    # Try out an AnisotropicRBF on the isotropic data too.
-    kernel = "0.01*AnisotropicRBF(scale_length=[0.3, 0.3])"
-    #kernel += " + WhiteKernel(1e-5)"
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel+ "+ WhiteKernel(1e-5)",
-                     npca=npca, optimize=optimize,
-                     file_name="test_aniso_isotropic_grf.fits", rng=rng,
-                     check_config=check_config)
+    for optimize in optimizes:
+        check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
+                      optimize=optimize, anisotropic=False, file_name="test_gp_grf.fits", rng=rng)
 
 @timer
 def test_vonkarman_psf():
     if __name__ == '__main__':
         ntrain = 200
-        npcas = [0]
         optimizes = [True, False]
-        check_config = True
         rtol = 0.05
     else:
         ntrain = 100
-        npcas = [0]
         optimizes = [True]
-        check_config = False
         rtol = 0.05
     nvalidate, nvisualize = 1, 20
     rng = galsim.BaseDeviate(987654334587656)
@@ -851,35 +719,26 @@ def test_vonkarman_psf():
 
     kernel = "0.01*VonKarman(2., (1e-1, 1e1))"
     anisotropic_kernel = "0.01*AnisotropicVonKarman(scale_length=[4.,4.])"
-
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data,
-                     kernel + " + WhiteKernel(1e-5, (1e-6, 1e-1))",
-                     npca=npca, optimize=optimize, file_name="test_gp_vonkarman.fits", rng=rng,
-                     check_config=check_config, rtol=rtol)
-            check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
-                          npca=npca, optimize=optimize, anisotropic=False, file_name="test_gp_vonkarman.fits", rng=rng,
-                          check_config=check_config, rtol=rtol)
+    
+    for optimize in optimizes:
+        check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
+                      optimize=optimize, anisotropic=False, file_name="test_gp_vonkarman.fits", 
+                      rng=rng, rtol=rtol)
 
     check_gp_2pcf(training_data, validation_data, visualization_data, anisotropic_kernel,
-                  npca=0, optimize=False, anisotropic=True, file_name="test_gp_vonkarman.fits", rng=rng,
-                  check_config=check_config, rtol=rtol)
+                  optimize=False, anisotropic=True, file_name="test_gp_vonkarman.fits", 
+                  rng=rng, rtol=rtol)
 
 @timer
 def test_gp_with_kernels():
 
     if __name__ == '__main__':
         ntrain = 1000
-        npcas = [0]
         optimizes = [True, False]
-        check_config = True
         rtol = 0.02
     else:
         ntrain = 500
-        npcas = [0]
         optimizes = [False]
-        check_config = False
         rtol = 0.05
     nvalidate, nvisualize = 1, 20
     rng = galsim.BaseDeviate(987654334587656)
@@ -893,25 +752,20 @@ def test_gp_with_kernels():
               "0.01*VonKarman(0.7, (1e-1, 1e1))",
               "0.01*VonKarman(0.7, (1e-1, 1e1))"]
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
-                          npca=npca, optimize=optimize, file_name="test_gp_vonkarman.fits", rng=rng,
-                          check_config=check_config, rtol=rtol)
+    for optimize in optimizes:
+        check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
+                      optimize=optimize, file_name="test_gp_vonkarman.fits", 
+                      rng=rng, rtol=rtol)
 
 
 @timer
 def test_anisotropic_rbf_kernel():
     if __name__ == '__main__':
         ntrain = 250
-        npcas = [0]
         optimizes = [True, False]
-        check_config = True
     else:
         ntrain = 250
-        npcas = [0]
         optimizes = [False, True]
-        check_config = False
     nvalidate, nvisualize = 1, 21
     rng = galsim.BaseDeviate(5867943)
 
@@ -929,13 +783,9 @@ def test_anisotropic_rbf_kernel():
 
     print(kernel)
 
-    for npca in npcas:
-        for optimize in optimizes:
-            check_gp(training_data, validation_data, visualization_data, kernel+ "+ WhiteKernel(1e-5, (1e-7, 1e-2))",
-                     npca=npca, optimize=optimize, file_name="test_anisotropic_rbf.fits",
-                     rng=rng, check_config=check_config)
-            check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
-                          npca=npca, anisotropic=True, optimize=optimize, rng=rng, check_config=True)
+    for optimize in optimizes:
+        check_gp_2pcf(training_data, validation_data, visualization_data, kernel,
+                      anisotropic=True, optimize=optimize, rng=rng)
 
 @timer
 def test_vonkarman_kernel():
@@ -974,9 +824,9 @@ def test_vonkarman_kernel():
         
             kernel = "%.10f * VonKarman(length_scale=%f)"%((amp**2,corr))
 
-            interp = piff.GPInterp2pcf(kernel=kernel,
-                                       normalize=False,
-                                       white_noise=0.)
+            interp = treegp.GPInterp2pcf(kernel=kernel,
+                                         normalize=False,
+                                         white_noise=0.)
             ker = interp.kernel_template[0]
 
             ker_piff = ker.__call__(coord)
@@ -1037,14 +887,14 @@ def test_anisotropic_vonkarman_kernel():
     for i in range(5):
         L = get_correlation_length_matrix(corr_length[i], g1[i], g2[i])
         inv_L = np.linalg.inv(L)
-        ker = kernel_amp[i]**2 * piff.AnisotropicVonKarman(invLam=inv_L)
-        ker_piff = ker.__call__(coord)
-        corr_piff = ker.__call__(coord_corr,Y=np.zeros_like(coord_corr))[:,0]
+        ker = kernel_amp[i]**2 * treegp.AnisotropicVonKarman(invLam=inv_L)
+        ker_treegp = ker.__call__(coord)
+        corr_treegp = ker.__call__(coord_corr,Y=np.zeros_like(coord_corr))[:,0]
         ker_test = _anisotropic_vonkarman_kernel(coord, kernel_amp[i], corr_length[i], g1[i], g2[i])
         corr_test = _anisotropic_vonkarman_corr_function(x, y, kernel_amp[i],
                                                          corr_length[i], g1[i], g2[i])
-        np.testing.assert_allclose(ker_piff, ker_test, atol=1e-12)
-        np.testing.assert_allclose(corr_piff, corr_test, atol=1e-12)
+        np.testing.assert_allclose(ker_treegp, ker_test, atol=1e-12)
+        np.testing.assert_allclose(corr_treegp, corr_test, atol=1e-12)
         
         hyperparameter = ker.theta
         theta = hyperparameter[1:]
@@ -1055,125 +905,17 @@ def test_anisotropic_vonkarman_kernel():
         np.testing.assert_allclose(inv_L, invLam, atol=1e-12)
 
 @timer
-def test_yaml():
-
-    if __name__ == '__main__':
-        logger = piff.config.setup_logger(verbose=2)
-    else:
-        logger = piff.config.setup_logger(log_file='output/test_gp.log')
-
-    # Take DES test image, and test doing a psf run with GP interpolator
-    # Use config parser:
-    for gp_piff in ['GPInterp', 'GPInterp2pcf']:
-        psf_file = os.path.join('output','gp_psf.fits')
-        config = {
-            'input' : {
-                # These can be regular strings
-                'image_file_name' : 'input/DECam_00241238_01.fits.fz',
-                # Or any GalSim str value type.  e.g. FormattedStr
-                'cat_file_name' : {
-                    'type': 'FormattedStr',
-                    'format': '%s/DECam_%08d_%02d_psfcat_tb_maxmag_17.0_magcut_3.0_findstars.fits',
-                    'items': [
-                        'input',    # dir
-                        241238,     # expnum
-                        1           # chipnum
-                    ]
-                },
-    
-                # What hdu is everything in?
-                'image_hdu' : 1,
-                'badpix_hdu' : 2,
-                'weight_hdu' : 3,
-                'cat_hdu' : 2,
-    
-                # What columns in the catalog have things we need?
-                'x_col' : 'XWIN_IMAGE',
-                'y_col' : 'YWIN_IMAGE',
-                'ra' : 'TELRA',
-                'dec' : 'TELDEC',
-                'gain' : 'GAINA',
-                'sky_col' : 'BACKGROUND',
-    
-                # How large should the postage stamp cutouts of the stars be?
-                'stamp_size' : 21,
-            },
-            'psf' : {
-                'model' : { 'type' : 'GSObjectModel',
-                            'fastfit' : True,
-                            'gsobj' : 'galsim.Gaussian(sigma=1.0)' },
-                'interp' : { 'type' : gp_piff,
-                             'keys' : ['u', 'v'],
-                             'kernel' : 'RBF(200.0)',
-                             'optimize' : False,}
-            },
-            'output' : { 'file_name' : psf_file },
-        }
-
-        if __name__ != '__main__':
-            config['input']['nstars'] = 25
-
-        piff.piffify(config, logger)
-        psf = piff.read(psf_file)
-        assert type(psf.model) is piff.GSObjectModel
-        assert type(psf.interp) is piff.GPInterp or type(psf.interp) is piff.GPInterp2pcf
-        print('nstars = ',len(psf.stars))
-        target = psf.stars[17]
-        test_star = psf.interp.interpolate(target)
-        np.testing.assert_almost_equal(test_star.fit.params, target.fit.params, decimal=3)
-        # This should also work if the target doesn't have a fit yet.
-        print('interpolate ',piff.Star(target.data,None))
-        test_star = psf.interp.interpolate(piff.Star(target.data,None))
-        np.testing.assert_almost_equal(test_star.fit.params, target.fit.params, decimal=3)
-
-
-@timer
 def test_anisotropic_limit():
     """Test that AnisotropicRBF with isotropic covariance equals RBF"""
 
     kernel1 = "RBF(0.45)"
     kernel2 = "AnisotropicRBF(scale_length=[0.45, 0.45])"
 
-    gp1 = piff.GPInterp(kernel=kernel1)
-    gp2 = piff.GPInterp(kernel=kernel2)
+    gp1 = treegp.GPInterp2pcf(kernel=kernel1)
+    gp2 = treegp.GPInterp2pcf(kernel=kernel2)
 
     X = np.random.rand(1000, 2)
-    np.testing.assert_allclose(gp1.gp.kernel(X), gp2.gp.kernel(X))
-
-
-@timer
-def test_guess():
-    if __name__ == '__main__':
-        guesses =  [0.03, 0.1, 0.3, 1.0, 3.0]
-        rtol = 0.02
-    else:
-        guesses = [0.1]
-        rtol = 0.01
-    ntrain, nvalidate, nvisualize = 100, 1, 21
-    rng = galsim.BaseDeviate(8675309)
-
-    training_data, validation_data, visualization_data = make_grf_psf_params(
-            ntrain, nvalidate, nvisualize)
-
-    inferred_scale_length = []
-    for guess in guesses:
-        # noise of 0.3 turns out to be pretty significant here.
-        stars = params_to_stars(training_data, noise=0.3, rng=rng)
-        kernel = "1*RBF({0}, (1e-1, 1e1))".format(guess)
-        kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
-        interp = piff.GPInterp(kernel=kernel, normalize=False)
-        stars = [mod.fit(s) for s in stars]
-        stars = interp.initialize(stars)
-        interp.solve(stars)
-
-        # A bit complicated, but this extracts the scale-length
-        inferred_scale_length.append(np.exp(interp.gp.kernel_.theta[1]))
-
-    # Check that the inferred scale length is close to the input value of 0.3
-    np.testing.assert_allclose(inferred_scale_length, 0.3, rtol=0.15)
-    # More interesting however, is how independent is the optimization wrt the initial value.
-    # So check that the standard deviation of the results is much smaller than the value.
-    np.testing.assert_array_less(np.std(inferred_scale_length), 0.3*rtol)
+    np.testing.assert_allclose(gp1.kernel_template[0].__call__(X), gp2.kernel_template[0].__call__(X))
 
 @timer
 def test_guess_2pcf():
@@ -1198,7 +940,7 @@ def test_guess_2pcf():
         stars = params_to_stars(training_data, noise=0.1, rng=rng)
         kernel = "0.05*RBF({0}, (1e-6, 1e1))".format(guess)
         norm = guess < 0.2  # Arbitrary.  Just check both True and False.
-        interp = piff.GPInterp2pcf(kernel=kernel, normalize=norm, white_noise=0., anisotropic=False)
+        interp = treegp.GPInterp2pcf(kernel=kernel, normalize=norm, white_noise=0., anisotropic=False)
         stars = [mod.fit(s) for s in stars]
         stars = interp.initialize(stars)
         interp.solve(stars)
@@ -1213,51 +955,6 @@ def test_guess_2pcf():
     # So check that the standard deviation of the results is much smaller than the value.
     np.testing.assert_array_less(np.std(inferred_scale_length), 0.3*rtol)
 
-@timer
-def test_anisotropic_guess():
-    if __name__ == '__main__':
-        guesses =  [0.03, 0.1, 0.3, 1.0, 3.0]
-        rtol = 0.05
-    else:
-        guesses = [0.03, 0.3, 3.0]
-        rtol = 0.05
-    ntrain, nvalidate, nvisualize = 100, 1, 1
-    rng = galsim.BaseDeviate(8675309)
-
-    training_data, validation_data, visualization_data = make_anisotropic_grf_psf_params(
-            ntrain, nvalidate, nvisualize)
-
-    var1s = []
-    var2s = []
-    corrs = []
-
-    for guess in guesses:
-        # noise of 0.3 turns out to be pretty significant here.
-        stars = params_to_stars(training_data, noise=0.03, rng=rng)
-        kernel = "1*AnisotropicRBF(scale_length={0!r})".format([guess, guess])
-        kernel += " + WhiteKernel(1e-5, (1e-7, 1e-1))"
-        interp = piff.GPInterp(kernel=kernel)
-        stars = [mod.fit(s) for s in stars]
-        stars = interp.initialize(stars)
-        interp.solve(stars)
-
-        invLam = interp.gp.kernel_.get_params()['k1__k2__invLam']
-        Lam = np.linalg.inv(invLam)
-        var1s.append(Lam[0, 0])
-        var2s.append(Lam[1, 1])
-        corrs.append(Lam[0, 1] / np.sqrt(Lam[0, 0]*Lam[1, 1]))
-        print(var1s[-1], var2s[-1], corrs[-1])
-    # Check that the inferred correlation is close to the input correlation with params:
-    # var1 = 0.1**2, var2 = 0.2**2, corr = 0.7
-    np.testing.assert_allclose(var1s, 0.1**2, rtol=1.0)  # Only get right order-of-magnitude or so
-    np.testing.assert_allclose(var2s, 0.2**2, rtol=1.0)  # Only get right order-of-magnitude or so
-    np.testing.assert_allclose(corrs, 0.7, rtol=0.1)  # This one works much better
-    # More interesting however, is how independent is the optimization wrt the initial value.
-    # So check that the standard deviation of the results is small.
-    np.testing.assert_array_less(np.std(var1s), 0.1**2*rtol)
-    np.testing.assert_array_less(np.std(var2s), 0.2**2*rtol)
-    np.testing.assert_array_less(np.std(corrs), 0.7*rtol)
-
 
 if __name__ == '__main__':
     # import cProfile, pstats
@@ -1271,11 +968,8 @@ if __name__ == '__main__':
     test_gp_with_kernels()
     test_vonkarman_kernel()
     test_anisotropic_vonkarman_kernel()
-    test_yaml()
     test_anisotropic_limit()
-    test_guess()
     test_guess_2pcf()
-    test_anisotropic_guess()
     # pr.disable()
     # ps = pstats.Stats(pr).sort_stats('tottime')
     # ps.print_stats(25)
