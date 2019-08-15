@@ -240,37 +240,6 @@ class GPInterp2pcf(object):
         self._X0 = X0
         self._y0 = y0
 
-    @staticmethod
-    def _eval_kernel(kernel):
-        # Some import trickery to get all subclasses of sklearn.gaussian_process.kernels.Kernel
-        # into the local namespace without doing "from sklearn.gaussian_process.kernels import *"
-        # and without importing them all manually.
-        def recurse_subclasses(cls):
-            out = []
-            for c in cls.__subclasses__():
-                out.append(c)
-                out.extend(recurse_subclasses(c))
-            return out
-        clses = recurse_subclasses(Kernel)
-        for cls in clses:
-            module = __import__(cls.__module__, globals(), locals(), cls)
-            execstr = "{0} = module.{0}".format(cls.__name__)
-            exec(execstr, globals(), locals())
-
-        from numpy import array
-
-        try:
-            k = eval(kernel)
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception as e:  # pragma: no cover
-            raise RuntimeError("Failed to evaluate kernel string {0!r}.  "
-                               "Original exception: {1}".format(kernel, e))
-
-        if type(k.theta) is property:
-            raise TypeError("String provided was not initialized properly")
-        return k
-
     def _fit(self, kernel, X, y, y_err, logger=None):
         """Update the Kernel with data.
 
@@ -323,7 +292,7 @@ class GPInterp2pcf(object):
         xi, xi_weight, distance, coord, mask = bp.return_2pcf()
 
         def PCF(param, k=kernel):
-            kernel =  k.clone_with_theta(param)
+            kernel = k.clone_with_theta(param)
             pcf = kernel.__call__(coord,Y=np.zeros_like(coord))[:,0]
             return pcf
 
@@ -373,7 +342,7 @@ class GPInterp2pcf(object):
             ystar = self._pca.inverse_transform(ystar)
         return ystar
 
-    def return_gp_predict(self,y, X1, X2, kernel, y_err):
+    def return_gp_predict(self, y, X1, X2, kernel, y_err):
         """Compute interpolation with gaussian process for a given kernel.
 
         :param y:  The dependent responses.  (n_samples, n_targets)

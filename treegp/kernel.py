@@ -9,6 +9,44 @@ from sklearn.gaussian_process.kernels import Hyperparameter
 from sklearn.gaussian_process.kernels import _check_length_scale
 
 
+def eval_kernel(kernel):
+    """
+    Some import trickery to get all subclasses 
+    of sklearn.gaussian_process.kernels.Kernel
+    into the local namespace without doing 
+    "from sklearn.gaussian_process.kernels import *"
+    and without importing them all manually.
+
+    Example:
+    kernel = eval_kernel("RBF(1)") instead of
+    kernel = sklearn.gaussian_process.kernels.RBF(1)
+    """
+    def recurse_subclasses(cls):
+        out = []
+        for c in cls.__subclasses__():
+            out.append(c)
+            out.extend(recurse_subclasses(c))
+        return out
+    clses = recurse_subclasses(Kernel)
+    for cls in clses:
+        module = __import__(cls.__module__, globals(), locals(), cls)
+        execstr = "{0} = module.{0}".format(cls.__name__)
+        exec(execstr, globals(), locals())
+
+    from numpy import array
+
+    try:
+        k = eval(kernel)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError("Failed to evaluate kernel string {0!r}.  "
+                           "Original exception: {1}".format(kernel, e))
+
+    if type(k.theta) is property:
+        raise TypeError("String provided was not initialized properly")
+    return k
+
 class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
     """ A GaussianProcessRegressor Kernel representing a radial basis function (essentially a
     squared exponential or Gaussian) but with arbitrary anisotropic covariance.
