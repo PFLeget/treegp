@@ -6,12 +6,12 @@ import numpy as np
 import treecorr
 import copy
 
+from .kernels import eval_kernel
+
 from sklearn.gaussian_process.kernels import Kernel
 from sklearn.neighbors import KNeighborsRegressor
 from scipy import optimize
 from scipy.linalg import cholesky, cho_solve
-from scipy.stats import binned_statistic_2d
-import itertools
 
 from .star_temp import Star, StarFit
 
@@ -159,11 +159,7 @@ class GPInterp2pcf(object):
                          custom piff VonKarman object.  [default: 'RBF(1)']
     :param optimize:     Boolean indicating whether or not to try and optimize the kernel by
                          computing the two-point correlation function.  [default: True]
-    :param npca:         Number of principal components to keep. If !=0 pca is done on
-                         PSF parameters before any interpolation, and it will be the PC that will
-                         be interpolate and then retransform in PSF parameters. [default: 0, which
-                         means don't decompose PSF parameters into principle components.]
-    :param anisotropic:   2D 2-point correlation function. Used 2D correlation function for the
+    :param anisotropic:  2D 2-point correlation function. Used 2D correlation function for the
                          fiting part of the GP instead of a 1D correlation function. [default: False]
     :param normalize:    Whether to normalize the interpolation parameters to have a mean of 0.
                          Normally, the parameters being interpolated are not mean 0, so you would
@@ -188,11 +184,10 @@ class GPInterp2pcf(object):
                          exposures. See meanify documentation. [default: None]
     :param logger:       A logger object for logging debug info. [default: None]
     """
-    def __init__(self, keys=('u','v'), kernel='RBF(1)', optimize=True, npca=0, anisotropic=False, normalize=True,
+    def __init__(self, keys=('u','v'), kernel='RBF(1)', optimize=True, anisotropic=False, normalize=True,
                  white_noise=0., n_neighbors=4, average_fits=None, nbins=20, min_sep=None, max_sep=None, logger=None):
 
         self.keys = keys
-        self.npca = npca
         self.normalize = normalize
         self.optimize = optimize
         self.white_noise = white_noise
@@ -205,7 +200,6 @@ class GPInterp2pcf(object):
         self.kwargs = {
             'keys': keys,
             'optimize': optimize,
-            'npca': npca,
             'kernel': kernel,
             'normalize':normalize
         }
@@ -214,12 +208,12 @@ class GPInterp2pcf(object):
             raise ValueError('the total size of keys can not be something else than 2 using two-point correlation function. Here len(keys) = %i'%(len(keys)))
 
         if isinstance(kernel,str):
-            self.kernel_template = [self._eval_kernel(kernel)]
+            self.kernel_template = [eval_kernel(kernel)]
         else:
             if type(kernel) is not list and type(kernel) is not np.ndarray:
                 raise TypeError("kernel should be a string a list or a numpy.ndarray of string")
             else:
-                self.kernel_template = [self._eval_kernel(ker) for ker in kernel]
+                self.kernel_template = [eval_kernel(ker) for ker in kernel]
 
         self._2pcf = []
         self._2pcf_weight = []
@@ -228,8 +222,6 @@ class GPInterp2pcf(object):
         self._2pcf_mask = []
 
         if average_fits is not None:
-            if npca != 0:
-                raise ValueError('npca can be only 0 for the moment when average_fits is not None')
             import fitsio
             average = fitsio.read(average_fits)
             X0 = average['COORDS0'][0]
@@ -323,12 +315,8 @@ class GPInterp2pcf(object):
         :param Xstar:  The independent covariates at which to interpolate.  (n_samples, 2).
         :returns:  Regressed parameters  (n_samples, n_targets)
         """
-        if self.npca>0:
-            y_init = self._y_pca
-            y_err = self._y_pca_err
-        else:
-            y_init = self._y
-            y_err = self._y_err
+        y_init = self._y
+        y_err = self._y_err
 
         ystar = np.array([self.return_gp_predict(y_init[:,i]-self._mean[i]-self._spatial_average[:,i],
                                                  self._X, Xstar, ker, y_err=y_err[:,i])
@@ -338,8 +326,6 @@ class GPInterp2pcf(object):
 
         for i in range(self.nparams):
             ystar[:,i] += self._mean[i] + spatial_average[:,i]
-        if self.npca > 0:
-            ystar = self._pca.inverse_transform(ystar)
         return ystar
 
     def return_gp_predict(self, y, X1, X2, kernel, y_err):
@@ -377,12 +363,10 @@ class GPInterp2pcf(object):
         :param logger:  A logger object for logging debug info. [default: None]
         """
         self.nparams = len(stars[0].fit.params)
-        if self.npca>0:
-            self.nparams = self.npca
-        if len(self.kernel_template)==1:
+        if len(self.kernel_template) == 1:
             self.kernels = [copy.deepcopy(self.kernel_template[0]) for i in range(self.nparams)]
         else:
-            if len(self.kernel_template)!= self.nparams or (len(self.kernel_template)!= self.npca & self.npca!=0):
+            if len(self.kernel_template) != self.nparams:
                 raise ValueError("numbers of kernel provided should be 1 (same for all parameters) or " \
                                  "equal to the number of params (%i), number kernel provided: %i" \
                                  %((self.nparams,len(self.kernel_template))))
@@ -426,15 +410,6 @@ class GPInterp2pcf(object):
             y_err = np.sqrt(y_err**2 + self.white_noise**2)
         self._y_err = y_err
 
-        if self.npca > 0:
-            from sklearn.decomposition import PCA
-            self._pca = PCA(n_components=self.npca)
-            self._pca.fit(y)
-            y = self._pca.transform(y)
-            y_err = self._pca.transform(y_err)
-            self._y_pca, self._y_pca_err = y, y_err
-            self.nparams = self.npca
-
         if self.normalize:
             self._mean = np.mean(y - self._spatial_average, axis=0)
         else:
@@ -476,64 +451,3 @@ class GPInterp2pcf(object):
             fit = star.fit.newParams(y0)
             fitted_stars.append(Star(star.data, fit))
         return fitted_stars
-
-    def _finish_write(self, fits, extname):
-        # Note, we're only storing the training data and hyperparameters here, which means the
-        # Cholesky decomposition will have to be re-computed when this object is read back from
-        # disk.
-
-        init_theta = np.array([self._init_theta[i] for i in range(self.nparams)])
-        fit_theta = np.array([ker.theta for ker in self.kernels])
-
-        dtypes = [('INIT_THETA', init_theta.dtype, init_theta.shape),
-                  ('FIT_THETA', fit_theta.dtype, fit_theta.shape),
-                  ('X', self._X.dtype, self._X.shape),
-                  ('Y', self._y.dtype, self._y.shape),
-                  ('Y_ERR', self._y_err.dtype, self._y_err.shape),
-                  ('X0', self._X0.dtype, self._X0.shape),
-                  ('Y0', self._y0.dtype, self._y0.shape)]
-
-        data = np.empty(1, dtype=dtypes)
-        data['INIT_THETA'] = init_theta
-        data['FIT_THETA'] = fit_theta
-        data['X'] = self._X
-        data['Y'] = self._y
-        data['Y_ERR'] = self._y_err
-        data['X0'] = self._X0
-        data['Y0'] = self._y0
-
-        fits.write_table(data, extname=extname+'_kernel')
-
-    def _finish_read(self, fits, extname):
-        data = fits[extname+'_kernel'].read()
-        # Run fit to set up GP, but don't actually do any hyperparameter optimization. Just
-        # set the GP up using the current hyperparameters.
-        init_theta = np.atleast_1d(data['INIT_THETA'][0])
-        fit_theta = np.atleast_1d(data['FIT_THETA'][0])
-
-        self._X = np.atleast_1d(data['X'][0])
-        self._y = np.atleast_1d(data['Y'][0])
-        self._y_err = np.atleast_1d(data['Y_ERR'][0])
-
-        self._init_theta = init_theta
-        self.nparams = len(init_theta)
-
-        self._X0 = np.atleast_1d(data['X0'][0])
-        self._y0 = np.atleast_1d(data['Y0'][0])
-        self._spatial_average = self._build_average_meanify(self._X)
-
-        if self.normalize:
-            self._mean = np.mean(self._y - self._spatial_average, axis=0)
-        else:
-            self._mean = np.zeros(self.nparams)
-        if len(self.kernel_template)==1:
-            self.kernels = [copy.deepcopy(self.kernel_template[0]) for i in range(self.nparams)]
-        else:
-            if len(self.kernel_template)!= self.nparams:
-                raise ValueError("numbers of kernel provided should be 1 (same for all parameters) or " \
-                "equal to the number of params (%i), number kernel provided: %i"%((self.nparams,len(self.kernel_template))))
-            else:
-                self.kernels = [copy.deepcopy(ker) for ker in self.kernel_template]
-
-        for i in range(self.nparams):
-            self.kernels[i] = self.kernels[i].clone_with_theta(fit_theta[i])
