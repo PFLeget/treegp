@@ -147,12 +147,10 @@ class bootstrap_2pcf(object):
             xi_weight = np.eye(len(xi)) * 1./np.var(self.y)
         return xi, xi_weight, distance, coord, mask
 
-class GPInterp2pcf(object):
+class GPInterpolation(object):
     """
     An interpolator that uses two-point correlation function and gaussian process to interpolate a single surface.
 
-    :param keys:         A list of star attributes to interpolate from. Must be 2 attributes
-                         using two-point correlation function to estimate hyperparameter(s)
     :param kernel:       A string that can be `eval`ed to make a
                          sklearn.gaussian_process.kernels.Kernel object.  The reprs of
                          sklearn.gaussian_process.kernels will work, as well as the repr of a
@@ -174,20 +172,18 @@ class GPInterp2pcf(object):
                          of bins (if 2D correlation function) used in TreeCorr to compute the
                          2-point correlation function. [default: 20]
     :param min_sep:      Minimum separation between pairs when computing 2-point correlation
-                         function. In the same units as the keys. Compute automaticaly if it
-                         is not given. [default: None]
+                         function. In the same units as the coordinates of the field.
+                         Compute automaticaly if it is not given. [default: None]
     :param max_sep:      Maximum separation between pairs when computing 2-point correlation
-                         function. In the same units as the keys. Compute automaticaly if it
-                         is not given. [default: None]
+                         function. In the same units as the coordinates of the field.
+                         Compute automaticaly if it is not given. [default: None]
     :param average_fits: A fits file that have the spatial average functions of PSF parameters
                          build in it. Build using meanify and piff output across different
                          exposures. See meanify documentation. [default: None]
-    :param logger:       A logger object for logging debug info. [default: None]
     """
-    def __init__(self, keys=('u','v'), kernel='RBF(1)', optimize=True, anisotropic=False, normalize=True,
-                 white_noise=0., n_neighbors=4, average_fits=None, nbins=20, min_sep=None, max_sep=None, logger=None):
+    def __init__(self, kernel='RBF(1)', optimize=True, anisotropic=False, normalize=True,
+                 white_noise=0., n_neighbors=4, average_fits=None, nbins=20, min_sep=None, max_sep=None):
 
-        self.keys = keys
         self.normalize = normalize
         self.optimize = optimize
         self.white_noise = white_noise
@@ -198,22 +194,18 @@ class GPInterp2pcf(object):
         self.max_sep = max_sep
 
         self.kwargs = {
-            'keys': keys,
             'optimize': optimize,
             'kernel': kernel,
             'normalize':normalize
         }
 
-        if len(keys)!=2:
-            raise ValueError('the total size of keys can not be something else than 2 using two-point correlation function. Here len(keys) = %i'%(len(keys)))
-
         if isinstance(kernel,str):
-            self.kernel_template = [eval_kernel(kernel)]
+            self.kernel_template = eval_kernel(kernel)
         else:
-            if type(kernel) is not list and type(kernel) is not np.ndarray:
-                raise TypeError("kernel should be a string a list or a numpy.ndarray of string")
-            else:
-                self.kernel_template = [eval_kernel(ker) for ker in kernel]
+            #if type(kernel) is not list and type(kernel) is not np.ndarray:
+            raise TypeError("kernel should be a string a list or a numpy.ndarray of string")
+            #else:
+            #    self.kernel_template = [eval_kernel(ker) for ker in kernel]
 
         self._2pcf = []
         self._2pcf_weight = []
@@ -232,23 +224,17 @@ class GPInterp2pcf(object):
         self._X0 = X0
         self._y0 = y0
 
-    def _fit(self, kernel, X, y, y_err, logger=None):
+    def _fit(self, kernel, X, y, y_err):
         """Update the Kernel with data.
 
         :param kernel: sklearn.gaussian_process kernel.
         :param X:  The independent covariates.  (n_samples, 2)
         :param y:  The dependent responses.  (n_samples, n_targets)
         :param y_err: Error of y. (n_samples, n_targets)
-        :param logger:  A logger object for logging debug info. [default: None]
         """
-        if logger:
-            logger.debug('Start kernel: %s', kernel.set_params())
-            logger.debug('gp.fit with mean y = %s',np.mean(y))
         # Save these for potential read/write.
         if self.optimize:
             kernel = self._optimizer_2pcf(kernel,X,y,y_err)
-            if logger:
-                logger.debug('After fit: kernel = %s',kernel.set_params())
         return kernel
 
     def _optimizer_2pcf(self, kernel, X, y, y_err):
@@ -310,25 +296,26 @@ class GPInterp2pcf(object):
         self._2pcf_mask.append(mask)
         return kernel
 
-    def _predict(self, Xstar):
+    def predict(self, Xstar, return_cov=False):
         """ Predict responses given covariates.
         :param Xstar:  The independent covariates at which to interpolate.  (n_samples, 2).
         :returns:  Regressed parameters  (n_samples, n_targets)
         """
-        y_init = self._y
-        y_err = self._y_err
+        y_init = copy.deepcopy(self._y)
+        y_err = copy.deepcopy(self._y_err)
 
-        ystar = np.array([self.return_gp_predict(y_init[:,i]-self._mean[i]-self._spatial_average[:,i],
-                                                 self._X, Xstar, ker, y_err=y_err[:,i])
-                          for i, ker in enumerate(self.kernels)]).T
-
+        ystar, y_cov = self.return_gp_predict(y_init-self._mean-self._spatial_average,
+                                              self._X, Xstar, self.kernel, y_err=y_err,
+                                              return_cov=return_cov)
+        ystar = ystar.T
         spatial_average = self._build_average_meanify(Xstar)
+        ystar += self._mean + spatial_average
+        if return_cov:
+            return ystar, y_cov
+        else:
+            return ystar
 
-        for i in range(self.nparams):
-            ystar[:,i] += self._mean[i] + spatial_average[:,i]
-        return ystar
-
-    def return_gp_predict(self, y, X1, X2, kernel, y_err):
+    def return_gp_predict(self, y, X1, X2, kernel, y_err, return_cov=False):
         """Compute interpolation with gaussian process for a given kernel.
 
         :param y:  The dependent responses.  (n_samples, n_targets)
@@ -337,42 +324,46 @@ class GPInterp2pcf(object):
         :param kernel: sklearn.gaussian_process kernel.
         :param y_err: Error of y. (n_samples, n_targets)
         """
-        HT = kernel.__call__(X2,Y=X1)
+        HT = kernel.__call__(X2, Y=X1)
         K = kernel.__call__(X1) + np.eye(len(y))*y_err**2
         factor = (cholesky(K, overwrite_a=True, lower=False), False)
         alpha = cho_solve(factor, y, overwrite_b=False)
-        return np.dot(HT,alpha.reshape((len(alpha),1))).T[0]
+        y_predict = np.dot(HT,alpha.reshape((len(alpha),1))).T[0] 
+        if return_cov:
+            fact = cholesky(K, lower=True) # I am computing maybe twice the same things...
+            v = cho_solve((fact, True), HT.T)
+            y_cov = kernel.__call__(X2) - HT.dot(v)
+            return y_predict, y_cov
+        else:
+            return y_predict, None
 
-    def getProperties(self, star, logger=None):
-        """Extract the appropriate properties to use as the independent variables for the
-        interpolation.
-
-        Take self.keys from star.data
-
-        :param star:    A Star instances from which to extract the properties to use.
-
-        :returns:       A np vector of these properties.
-        """
-        return np.array([star.data[key] for key in self.keys])
-
-    def initialize(self, stars, logger=None):
+    def initialize(self, X, y, y_err=None):
         """Initialize both the interpolator to some state prefatory to any solve iterations and
         initialize the stars for use with this interpolator.
 
         :param stars:   A list of Star instances to interpolate between
-        :param logger:  A logger object for logging debug info. [default: None]
         """
-        self.nparams = len(stars[0].fit.params)
-        if len(self.kernel_template) == 1:
-            self.kernels = [copy.deepcopy(self.kernel_template[0]) for i in range(self.nparams)]
+        self.kernel = copy.deepcopy(self.kernel_template)
+
+        self._X = X
+        self._y = y
+        if y_err is None:
+            y_err = np.zeros_like(y)
+        self._y_err = y_err
+
+        if self._X0 is None:
+            self._X0 = np.zeros_like(self._X)
+            self._y0 = np.zeros_like(self._y)
+        self._spatial_average = self._build_average_meanify(X)
+
+        if self.white_noise > 0:
+            y_err = np.sqrt(copy.deepcopy(self._y_err)**2 + self.white_noise**2)
+        self._y_err = y_err
+
+        if self.normalize:
+            self._mean = np.mean(y - self._spatial_average)
         else:
-            if len(self.kernel_template) != self.nparams:
-                raise ValueError("numbers of kernel provided should be 1 (same for all parameters) or " \
-                                 "equal to the number of params (%i), number kernel provided: %i" \
-                                 %((self.nparams,len(self.kernel_template))))
-            else:
-                self.kernels = [copy.deepcopy(ker) for ker in self.kernel_template]
-        return stars
+            self._mean = 0.
 
     def _build_average_meanify(self, X):
         """Compute spatial average from meanify output for a given coordinate using KN interpolation.
@@ -386,68 +377,15 @@ class GPInterp2pcf(object):
             average = neigh.predict(X)         
             return average
         else:
-            return np.zeros((len(X[:,0]), self.nparams))
+            return np.zeros((len(X[:,0])))
 
-    def solve(self, stars=None, logger=None):
+    def solve(self):
         """Set up this GPInterp object.
 
         :param stars:    A list of Star instances to interpolate between
-        :param logger:   A logger object for logging debug info. [default: None]
         """
-        X = np.array([self.getProperties(star) for star in stars])
-        y = np.array([star.fit.params for star in stars])
-        y_err = np.sqrt(np.array([star.fit.params_var for star in stars]))
-
-        self._X = X
-        self._y = y
-
-        if self._X0 is None:
-            self._X0 = np.zeros_like(self._X)
-            self._y0 = np.zeros_like(self._y)
-        self._spatial_average = self._build_average_meanify(X)
-
-        if self.white_noise > 0:
-            y_err = np.sqrt(y_err**2 + self.white_noise**2)
-        self._y_err = y_err
-
-        if self.normalize:
-            self._mean = np.mean(y - self._spatial_average, axis=0)
-        else:
-            self._mean = np.zeros(self.nparams)
-
         self._init_theta = []
-        for i in range(self.nparams):
-            kernel = self.kernels[i]
-            self._init_theta.append(kernel.theta)
-            self.kernels[i] = self._fit(self.kernels[i],
-                                        X, y[:,i]-self._mean[i]-self._spatial_average[:,i],
-                                        y_err[:,i], logger=logger)
-            if logger:
-                logger.info('param %d: %s',i,kernel.set_params())
-
-    def interpolate(self, star, logger=None):
-        """Perform the interpolation to find the interpolated parameter vector at some position.
-
-        :param star:        A Star instance to which one wants to interpolate
-        :param logger:      A logger object for logging debug info. [default: None]
-
-        :returns: a new Star instance with its StarFit member holding the interpolated parameters
-        """
-        # because of sklearn formatting, call interpolateList and take 0th entry
-        return self.interpolateList([star], logger=logger)[0]
-
-    def interpolateList(self, stars, logger=None):
-        """Perform the interpolation for a list of stars.
-
-        :param star_list:   A list of Star instances to which to interpolate.
-        :param logger:      A logger object for logging debug info. [default: None]
-
-        :returns: a list of new Star instances with interpolated parameters
-        """
-        Xstar = np.array([self.getProperties(star) for star in stars])
-        y = self._predict(Xstar)
-        fitted_stars = []
-        for y0, star in zip(y, stars):
-            fit = star.fit.newParams(y0)
-            fitted_stars.append(Star(star.data, fit))
-        return fitted_stars
+        kernel = copy.deepcopy(self.kernel)
+        self._init_theta.append(kernel.theta)
+        self.kernel = self._fit(self.kernel, X, 
+                                 y-self._mean-self._spatial_average, y_err)

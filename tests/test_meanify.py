@@ -278,5 +278,5 @@ def test_meanify():
         np.testing.assert_allclose(params_interp, params_validation, rtol=rtol, atol=atol)
 
 if __name__ == '__main__':
-    setup()
+    #setup()
     test_meanify()
