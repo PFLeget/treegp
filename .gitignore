@@ -13,6 +13,7 @@ README.rst~
 
 TODO.txt~
 tests/output/
+tests/.DS_Store
 
 .gitignore~
 requirements.txt~
