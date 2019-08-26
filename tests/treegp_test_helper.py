@@ -40,3 +40,61 @@ def get_correlation_length_matrix(size, e1, e2):
                     [0, (size * q)**2]])
     L = np.dot(rot.T, ell.dot(rot))
     return L
+
+def make_1d_grf(kernel, noise=None, seed=42, npoints=40):
+    """
+    Function to generate a 1D gaussian random field for a 
+    given scikit-learn kernel.
+    
+    :param kernel:  given sklearn kernel.
+    :param noise:   float. Level of noise to add to the 
+                    gaussian randomn field. (default: None)
+    :param seed:    int. seed of the random process. (default: 42) 
+    :param npoints: int. number of points to generate for the 
+                    simulations.
+    """
+    # fixing the seed
+    np.random.seed(seed)
+    # generate random 1D coordinate
+    x = np.random.uniform(-10,10, npoints).reshape((npoints,1))
+    # creating the correlation matrix / kernel 
+    K = kernel.__call__(x)
+    # generating gaussian random field
+    y = np.random.multivariate_normal(np.zeros(npoints), K)
+    if noise is not None:
+        # adding noise
+        y += np.random.normal(scale=noise, size=npoints)
+        y_err = np.ones_like(y) * noise
+        return x, y, y_err
+    else:
+        return x, y
+
+def make_2d_grf(kernel, noise=None, seed=42, N_points=40):
+    """
+    Function to generate a 1D gaussian random field for a 
+    given scikit-learn kernel.
+    
+    :param kernel:  given sklearn kernel.
+    :param noise:   float. Level of noise to add to the 
+                    gaussian randomn field. (default: None)
+    :param seed:    int. seed of the random process. (default: 42) 
+    :param npoints: int. number of points to generate for the 
+                    simulations.
+    """
+    # fixing the seed
+    np.random.seed(seed)
+    # generate random 2D coordinate
+    x1 = np.random.uniform(-10,10, N_points)
+    x2 = np.random.uniform(-10,10, N_points)
+    x = np.array([x1, x2]).T
+    # creating the correlation matrix / kernel 
+    K = kernel.__call__(x)
+    # generating gaussian random field
+    y = np.random.multivariate_normal(np.zeros(N_points), K)
+    if noise is not None:
+        # adding noise
+        y += np.random.normal(scale=noise, size=N_points)
+        y_err = np.ones_like(y) * noise
+        return x, y, y_err
+    else:
+        return x, y
