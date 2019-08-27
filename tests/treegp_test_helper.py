@@ -69,7 +69,7 @@ def make_1d_grf(kernel, noise=None, seed=42, npoints=40):
     else:
         return x, y, None
 
-def make_2d_grf(kernel, noise=None, seed=42, N_points=40):
+def make_2d_grf(kernel, noise=None, seed=42, npoints=40):
     """
     Function to generate a 1D gaussian random field for a 
     given scikit-learn kernel.
@@ -84,16 +84,16 @@ def make_2d_grf(kernel, noise=None, seed=42, N_points=40):
     # fixing the seed
     np.random.seed(seed)
     # generate random 2D coordinate
-    x1 = np.random.uniform(-10,10, N_points)
-    x2 = np.random.uniform(-10,10, N_points)
+    x1 = np.random.uniform(-10,10, npoints)
+    x2 = np.random.uniform(-10,10, npoints)
     x = np.array([x1, x2]).T
     # creating the correlation matrix / kernel 
     K = kernel.__call__(x)
     # generating gaussian random field
-    y = np.random.multivariate_normal(np.zeros(N_points), K)
+    y = np.random.multivariate_normal(np.zeros(npoints), K)
     if noise is not None:
         # adding noise
-        y += np.random.normal(scale=noise, size=N_points)
+        y += np.random.normal(scale=noise, size=npoints)
         y_err = np.ones_like(y) * noise
         return x, y, y_err
     else:
