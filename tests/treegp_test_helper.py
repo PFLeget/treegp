@@ -67,7 +67,7 @@ def make_1d_grf(kernel, noise=None, seed=42, npoints=40):
         y_err = np.ones_like(y) * noise
         return x, y, y_err
     else:
-        return x, y
+        return x, y, None
 
 def make_2d_grf(kernel, noise=None, seed=42, N_points=40):
     """
@@ -97,4 +97,4 @@ def make_2d_grf(kernel, noise=None, seed=42, N_points=40):
         y_err = np.ones_like(y) * noise
         return x, y, y_err
     else:
-        return x, y
+        return x, y, None
