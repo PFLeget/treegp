@@ -2,7 +2,7 @@
 treegp.
 """
 
-from .gp_interp_2pcf import GPInterpolation
+from .gp_interp import GPInterpolation
 
 from .kernels import AnisotropicRBF
 from .kernels import VonKarman
