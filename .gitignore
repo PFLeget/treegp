@@ -14,12 +14,15 @@ README.rst~
 TODO.txt~
 tests/output/
 tests/.DS_Store
+.DS_Store
 
 .gitignore~
 requirements.txt~
 
 tests/*.py~
 tests/*.pyc
+
+
 
 # C extensions
 *.so

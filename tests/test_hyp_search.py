@@ -29,7 +29,7 @@ def test_hyperparameter_search_1d_2pcf():
         gp = treegp.GPInterpolation(kernel=kernel, optimize=True,
                                     optimizer='two-pcf', anisotropic=False, 
                                     normalize=True, nbins=15, min_sep=0.1, 
-                                    max_sep=max_sep[1])
+                                    max_sep=max_sep[i])
         gp.initialize(x, y, y_err=y_err)
         gp.solve()
         # test if found hyperparameters are close the true hyperparameters.
@@ -52,7 +52,7 @@ def test_hyperparameter_search_1d_2pcf():
         np.testing.assert_allclose(0., mean_pull, atol=3.*(std_pull)/np.sqrt(npoints))
         if std_pull > 1.:
             raise ValueError("std_pull is > 1. Current value std_pull = %f"%(std_pull))
-        
+
         # Test that for extrapolation, interpolation is the mean function (0 here)
         # and the diagonal of the covariance matrix is close to the hyperameters is
         # link to the amplitudes of the fluctuation of the gaussian random fields.
@@ -66,9 +66,76 @@ def test_hyperparameter_search_1d_2pcf():
         sig = np.sqrt(np.exp(gp.kernel.theta[0]))
         np.testing.assert_allclose(sig*np.ones_like(y_std), y_std, atol=1e-5)
 
+@timer
+def test_hyperparameter_search_2d_2pcf():
+    npoints = 2000
+    noise = 0.01
+    sigma = 2.
+    size = 0.5
+    g1 = 0.2
+    g2 = 0.2
+    ker = 'AnisotropicRBF'
+
+    # Generate 2D gaussian random fields.
+    L = get_correlation_length_matrix(size, g1, g2)
+    invL = np.linalg.inv(L)
+    kernel = "%f**2*%s"%((sigma, ker))
+    kernel += "(invLam={0!r})".format(invL)
+    kernel_skl = treegp.eval_kernel(kernel)
+
+    x, y, y_err = make_2d_grf(kernel_skl,
+                              noise=noise,
+                              seed=42, npoints=npoints)
+
+    # Do gp interpolation without hyperparameters
+    # fitting (truth is put initially).
+    gp = treegp.GPInterpolation(kernel=kernel, optimize=True,
+                                optimizer='two-pcf', anisotropic=True,
+                                normalize=True, nbins=21, min_sep=0.,
+                                max_sep=3.)
+    gp.initialize(x, y, y_err=y_err)
+    gp.solve()
+    # test if found hyperparameters are close the true hyperparameters.
+    np.testing.assert_allclose(kernel_skl.theta, gp.kernel.theta, atol=5e-1)
+
+    # Predict at same position as the simulated data.
+    # Predictions are strictily equal to the input data
+    # in the case of no noise. With noise you should expect
+    # to have a pull distribution with mean function arround 0
+    # with a std<1 (you use the same data to train and validate, and
+    # the data are well sample compared to the input correlation
+    # length).
+    y_predict, y_cov = gp.predict(x, return_cov=True)
+    y_std = np.sqrt(np.diag(y_cov))
+    pull = y - y_predict
+    pull /= np.sqrt(y_err**2 + y_std**2)
+    mean_pull = np.mean(pull)
+    std_pull = np.std(pull)
+
+    # Test that mean of the pull is close to zeros and std of the pull bellow 1.
+    np.testing.assert_allclose(0., mean_pull, atol=3.*(std_pull)/np.sqrt(npoints))
+    if std_pull > 1.:
+        raise ValueError("std_pull is > 1. Current value std_pull = %f"%(std_pull))
+
+    # Test that for extrapolation, interpolation is the mean function (0 here)
+    # and the diagonal of the covariance matrix is close to the hyperameters is
+    # link to the amplitudes of the fluctuation of the gaussian random fields.
+
+    np.random.seed(42)
+    x1 = np.random.uniform(np.max(x)+6.*size,
+                           np.max(x)+6.*size, npoints)
+    x2 = np.random.uniform(np.max(x)+6.*size,
+                           np.max(x)+6.*size, npoints)
+    new_x = np.array([x1, x2]).T
+
+    y_predict, y_cov = gp.predict(new_x, return_cov=True)
+    y_std = np.sqrt(np.diag(y_cov))
+
+    np.testing.assert_allclose(np.mean(y), y_predict, atol=1e-5)
+    sig = np.sqrt(np.exp(gp.kernel.theta[0]))
+    np.testing.assert_allclose(sig*np.ones_like(y_std), y_std, atol=1e-5)
 
 if __name__ == "__main__":
 
     test_hyperparameter_search_1d_2pcf()
-    #test_gp_interp_2d()
-
+    test_hyperparameter_search_2d_2pcf()
