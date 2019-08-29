@@ -17,11 +17,17 @@ class two_pcf(object):
         :param nbins:       Number of bins (if 1D correlation function) of the square root of the number
                             of bins (if 2D correlation function) used in TreeCorr to compute the
                             2-point correlation function. [default: 20]
-        :param anisotropic:  2D 2-point correlation function.
+        :param anisotropic: 2D 2-point correlation function.
                             Used 2D correlation function for the
                             fiting part of the GP. (Boolean)
         """
-        self.X = X
+        self.ndim = np.shape(X)[1]
+        if self.ndim not in [1, 2]:
+            raise ValueError('two-pcf support only 1d and 2d modeling for the moment. curent ndim: %i'%(self.ndim))
+        if self.ndim == 2:
+            self.X = X
+        if self.ndim == 1:
+            self.X = np.array([X.T, np.zeros_like(X.T)]).T[:,0]
         self.y = y
         self.y_err = y_err
         self.min_sep = min_sep
@@ -143,8 +149,12 @@ class two_pcf(object):
         :param kernel: sklearn.gaussian_process kernel.
         """
         size_x = np.max(self.X[:,0]) - np.min(self.X[:,0])
-        size_y = np.max(self.X[:,1]) - np.min(self.X[:,1])
-        rho = float(len(self.X[:,0])) / (size_x * size_y)
+        if self.ndim == 2:
+            size_y = np.max(self.X[:,1]) - np.min(self.X[:,1])
+            rho = float(len(self.X[:,0])) / (size_x * size_y)
+        if self.ndim == 1:
+            size_y = 0.
+            rho = float(len(self.X[:,0])) / size_x
         # if min_sep is None and isotropic GP, set min_sep to the average separation
         # between data.
         if self.min_sep is not None:
@@ -160,6 +170,9 @@ class two_pcf(object):
             max_sep = self.max_sep
         else:
             max_sep = np.sqrt(size_x**2 + size_y**2)/2.
+
+        self.min_sep = min_sep
+        self.max_sep = max_sep
 
         xi, xi_weight, distance, coord, mask = self.return_2pcf()
 

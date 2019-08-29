@@ -2,6 +2,7 @@
 .. module:: gp_interp
 """
 
+import treegp
 import numpy as np
 import copy
 
@@ -95,14 +96,14 @@ class GPInterpolation(object):
         if self.optimize:
             # Hyperparameters estimation using 2-point correlation
             # function information.
-            if self.optimizer is 'two-pcf':
+            if self.optimizer == 'two-pcf':
                 self._optimizer = treegp.two_pcf(X, y, y_err,
                                                  self.min_sep, self.max_sep,
                                                  nbins=self.nbins,
                                                  anisotropic=self.anisotropic)
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.
-            if self.optimizer is 'log-likelihood':
+            if self.optimizer == 'log-likelihood':
                 self._optimizer = None
                 kernel = None
                 print('TO IMPLEMENT')
@@ -200,5 +201,5 @@ class GPInterpolation(object):
         self._init_theta = []
         kernel = copy.deepcopy(self.kernel)
         self._init_theta.append(kernel.theta)
-        self.kernel = self._fit(self.kernel, X, 
-                                 y-self._mean-self._spatial_average, y_err)
+        self.kernel = self._fit(self.kernel, self._X, 
+                                self._y-self._mean-self._spatial_average, self._y_err)
