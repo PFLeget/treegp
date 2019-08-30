@@ -53,4 +53,5 @@ class log_likelihood(object):
         results = results_bfgs['x']
         kernel = kernel.clone_with_theta(results)
         self._kernel = copy.deepcopy(kernel)
+        self._logL = self.log_likelihood(self._kernel)
         return kernel

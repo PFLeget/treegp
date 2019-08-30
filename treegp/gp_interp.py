@@ -60,12 +60,6 @@ class GPInterpolation(object):
         self.min_sep = min_sep
         self.max_sep = max_sep
 
-        self.kwargs = {
-            'optimize': optimize,
-            'kernel': kernel,
-            'normalize':normalize
-        }
-
         if isinstance(kernel,str):
             self.kernel_template = eval_kernel(kernel)
         else:
@@ -106,11 +100,11 @@ class GPInterpolation(object):
             if self.optimizer == 'log-likelihood':
                 self._optimizer = treegp.log_likelihood(X, y, y_err)
                 kernel = self._optimizer.optimizer(kernel)
-
         return kernel
 
     def predict(self, Xstar, return_cov=False):
         """ Predict responses given covariates.
+
         :param Xstar:  The independent covariates at which to interpolate.  (n_samples, 2).
         :returns:  Regressed parameters  (n_samples, n_targets)
         """
@@ -202,3 +196,30 @@ class GPInterpolation(object):
         self._init_theta.append(kernel.theta)
         self.kernel = self._fit(self.kernel, self._X, 
                                 self._y-self._mean-self._spatial_average, self._y_err)
+
+    def return_2pcf(self):
+        """
+        Return 2-point correlation function and its variance using Bootstrap.
+
+        :param seed: seed of the random generator.
+        """
+        pcf = treegp.two_pcf(self._X, self._y-self._mean-self._spatial_average, self._y_err,
+                             self.min_sep, self.max_sep,
+                             nbins=self.nbins,
+                             anisotropic=self.anisotropic)
+        xi, xi_weight, distance, coord, mask = pcf.return_2pcf()
+        return xi, xi_weight, distance, coord, mask
+
+    def return_log_likelihood(self, theta=None):
+        """
+        Return of log likehood of gaussian process
+        for given hyperparameters.
+
+        :param theta: Array of hyperparamters. (default: None)
+        """
+        kernel = copy.deepcopy(self.kernel)
+        if theta is not None:
+            kernel = kernel.clone_with_theta(theta)
+        logl = treegp.log_likelihood(self._X, self._y-self._mean-self._spatial_average, self._y_err)
+        log_likelihood = logl.log_likelihood(kernel)
+        return log_likelihood
