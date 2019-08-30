@@ -104,9 +104,8 @@ class GPInterpolation(object):
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.
             if self.optimizer == 'log-likelihood':
-                self._optimizer = None
-                kernel = None
-                print('TO IMPLEMENT')
+                self._optimizer = treegp.log_likelihood(X, y, y_err)
+                kernel = self._optimizer.optimizer(kernel)
 
         return kernel
 
