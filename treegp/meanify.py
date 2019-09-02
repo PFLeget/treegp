@@ -17,7 +17,7 @@ class meanify(object):
 
         self.bin_spacing = bin_spacing
 
-        if statistic not in ['mean', 'median']:
+        if statistics not in ['mean', 'median']:
             raise ValueError("%s is not a suported statistic (only mean and median are currently suported)"
                              %(statistics))
         self.stat_used = statistics #default statistics: arithmetic mean over each bin
@@ -47,15 +47,15 @@ class meanify(object):
         lu_min, lu_max = np.min(coords[:,0]), np.max(coords[:,0])
         lv_min, lv_max = np.min(coords[:,1]), np.max(coords[:,1])
 
-        nbin_u = int((lu_max - lu_min) / bin_spacing)
-        nbin_v = int((lv_max - lv_min) / bin_spacing)
+        nbin_u = int((lu_max - lu_min) / self.bin_spacing)
+        nbin_v = int((lv_max - lv_min) / self.bin_spacing)
         binning = [np.linspace(lu_min, lu_max, nbin_u), np.linspace(lv_min, lv_max, nbin_v)]
         nbinning = (len(binning[0]) - 1) * (len(binning[1]) - 1)
         Filter = np.array([True]*nbinning)
 
         average, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
                                                           params, bins=binning,
-                                                          statistic=stat_used)
+                                                          statistic=self.stat_used)
         average = average.T
         average = average.reshape(-1)
         Filter &= np.isfinite(average).reshape(-1)
@@ -73,14 +73,14 @@ class meanify(object):
         self.coords0 = coords0[Filter]
         self.params0 = params0[Filter]
 
-    def save_results(dir='', name_output='mean_gp.fits'):
+    def save_results(self, directory='', name_output='mean_gp.fits'):
         """
         Write output mean function.
         
-        :param dir:         Directory where to save the output file. (default: '')
+        :param directory:   Directory where to save the output file. (default: '')
         :param name_output: Name of the output fits file. (default: 'mean_gp.fits')
         """
-        file_name_out = os.path.join(rep, name_output)
+        file_name_out = os.path.join(directory, name_output)
 
         dtypes = [('COORDS0', self.coords0.dtype, self.coords0.shape),
                   ('PARAMS0', self.params0.dtype, self.params0.shape),
