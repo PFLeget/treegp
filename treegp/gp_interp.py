@@ -47,8 +47,10 @@ class GPInterpolation(object):
                          build in it. Build using meanify and piff output across different
                          exposures. See meanify documentation. [default: None]
     """
-    def __init__(self, kernel='RBF(1)', optimize=True, optimizer='two-pcf', anisotropic=False, normalize=True,
-                 white_noise=0., n_neighbors=4, average_fits=None, nbins=20, min_sep=None, max_sep=None):
+    def __init__(self, kernel='RBF(1)', optimize=True, optimizer='two-pcf',
+                 anisotropic=False, normalize=True, robust_fit=False, p0=[3000., 0.,0.],
+                 white_noise=0., n_neighbors=4, average_fits=None,
+                 nbins=20, min_sep=None, max_sep=None):
 
         self.normalize = normalize
         self.optimize = optimize
@@ -59,6 +61,8 @@ class GPInterpolation(object):
         self.nbins = nbins
         self.min_sep = min_sep
         self.max_sep = max_sep
+        self.robust_fit = robust_fit
+        self.p0_robust_fit = p0
 
         if isinstance(kernel,str):
             self.kernel_template = eval_kernel(kernel)
@@ -94,7 +98,9 @@ class GPInterpolation(object):
                 self._optimizer = treegp.two_pcf(X, y, y_err,
                                                  self.min_sep, self.max_sep,
                                                  nbins=self.nbins,
-                                                 anisotropic=self.anisotropic)
+                                                 anisotropic=self.anisotropic,
+                                                 robust_fit=self.robust_fit
+                                                 p0=self.p0_robust_fit)
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.
             if self.optimizer == 'log-likelihood':

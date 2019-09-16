@@ -1,12 +1,128 @@
 import numpy as np
 import treecorr
-import copy
+import treegp
+from treegp import eval_kernel
 from scipy import optimize
+from iminuit import Minuit
+import sklearn
+import copy
+import warnings
+
+
+def get_correlation_length_matrix(size, e1, e2):
+    if abs(e1)>1:
+        e1 = 0
+    if abs(e2)>1:
+        e2 = 0
+    e = np.sqrt(e1**2 + e2**2)
+    q = (1-e) / (1+e)
+    phi = 0.5 * np.arctan2(e2,e1)
+    rot = np.array([[np.cos(phi), np.sin(phi)],
+                    [-np.sin(phi), np.cos(phi)]])
+    ell = np.array([[size**2, 0],
+                    [0, (size * q)**2]])
+    L = np.dot(rot.T, ell.dot(rot))
+    return L
+
+def get_kernel_class(A):
+
+    if A.__class__ in [treegp.kernels.AnisotropicVonKarman,
+                       treegp.kernels.AnisotropicRBF,
+                       sklearn.gaussian_process.kernels.Product]:
+
+        if A.__class__ in [sklearn.gaussian_process.kernels.Product]:
+            ok = False
+            for key in A.__dict__:
+                if A.__dict__[key].__class__ in [treegp.kernels.AnisotropicVonKarman,
+                                                 treegp.kernels.AnisotropicRBF]:
+                    kernel_class = A.__dict__[key].__class__
+                    ok = True
+            if not ok:
+                raise ValueError('Work only with treegp.kernels.AnisotropicVonKarman and treegp.kernels.AnisotropicRBF')
+        else:
+            kernel_class = A.__class__
+        return kernel_class
+    else:
+        raise ValueError('Work only with treegp.kernels.AnisotropicVonKarman and treegp.kernels.AnisotropicRBF')
+
+class robust_2dfit(object):
+
+    def __init__(self, kernel, flat_data, x, y, W, mask=None):
+
+        if mask is None:
+            self.mask = np.array([True]*len(x))
+        else:
+            self.mask = mask
+
+        self.kernel_class = get_kernel_class(kernel)
+        self.flat_data = flat_data
+        self.x = x
+        self.y = y
+        self.coord = np.array([x, y]).T
+        self.W = W
+        self.N = int(np.sqrt(len(self.x)))
+
+    def _model_skl(self, sigma, corr_length, g1, g2):
+
+        L = get_correlation_length_matrix(corr_length, g1, g2)
+        invLam = np.linalg.inv(L)
+        kernel_used = self.kernel_class(invLam=invLam)
+        pcf = kernel_used.__call__(self.coord,Y=np.zeros_like(self.coord))[:,0]
+        self.kernel_fit = kernel_used
+        return pcf * sigma**2
+
+    def chi2(self, param):
+        model = self._model_skl(1., param[0],
+                                param[1], param[2])
+        model = model[self.mask]
+        F = np.array([model, np.ones_like(model)]).T
+        FWF = np.dot(F.T, self.W).dot(F)
+        Y = self.flat_data[self.mask].reshape((len(model), 1))
+        self.alpha = np.linalg.inv(FWF).dot(np.dot(F.T, self.W).dot(Y))
+        self.residuals = self.flat_data[self.mask] - ((self.alpha[0] * model) + self.alpha[1])
+        self.chi2_value = self.residuals.dot(self.W).dot(self.residuals.reshape((len(model), 1)))
+        return self.chi2_value
+
+    def _minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.m = Minuit.from_array_func(self.chi2, p0)
+            self.m.migrad()
+        results = [self.m.values[key] for key in self.m.values.keys()]
+        self._minuit_result = results
+        self.result = [np.sqrt(self.alpha[0][0]), results[0],
+                       results[1], results[2],
+                       self.alpha[1][0]]
+        chi2 = self.chi2(self.result)
+        self.kernel_fit = np.sqrt(self.alpha[0][0])**2 * self.kernel_fit
+
+    def minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
+    
+        self._minimize_minuit(p0=p0)
+
+        if not self.m.migrad_ok():
+            N_restart = 3
+            g1 = np.linspace(-0.3, 0.3, N_restart)
+            size = np.linspace(p0[0] - p0[0]/10., 2*p0[0], N_restart)
+            g1, g2, size = np.meshgrid(g1, g1, size)
+            N_restart = int(N_restart**3)
+            g1 = g1.reshape(N_restart)
+            g2 = g2.reshape(N_restart)
+            size = size.reshape(N_restart)
+            for i in range(N_restart):
+                print "restart fit because failure"
+                new_p0 = [size[i], g1[i], g2[i]]
+                print new_p0
+                self._minimize_minuit(p0=new_p0)
+                if self.m.migrad_ok():
+                    break
 
 class two_pcf(object):
 
     def __init__(self, X, y, y_err,
-                 min_sep, max_sep, nbins=20, anisotropic=False):
+                 min_sep, max_sep, nbins=20, 
+                 anisotropic=False, robust_fit=False, 
+                 p0=[3000., 0., 0.]):
         """Fit statistical uncertaintie on two-point correlation function using bootstraping.
 
         :param X:           The independent covariates.  (n_samples, 2)
@@ -20,6 +136,8 @@ class two_pcf(object):
         :param anisotropic: 2D 2-point correlation function.
                             Used 2D correlation function for the
                             fiting part of the GP. (Boolean)
+        :param robust_fit:  Used minuit to fit hyperparameter. Works only
+                            anisotropic is True. (Boolean)
         """
         self.ndim = np.shape(X)[1]
         if self.ndim not in [1, 2]:
@@ -34,6 +152,8 @@ class two_pcf(object):
         self.max_sep = max_sep
         self.nbins = nbins
         self.anisotropic = anisotropic
+        self.robust_fit = robust_fit
+        self.p0_robust_fit = p0
 
     def resample_bootstrap(self):
         """
@@ -186,19 +306,25 @@ class two_pcf(object):
             residual = xi_mask - PCF(param)[mask]
             return residual.dot(xi_weight.dot(residual))
 
-        p0 = kernel.theta
-
-        results_fmin = optimize.fmin(chi2,p0,disp=False)
-        results_bfgs = optimize.minimize(chi2,p0,method="L-BFGS-B")
-        results = [results_fmin, results_bfgs['x']]
-        chi2_min = [chi2(results[0]), chi2(results[1])]
-        ind_min = chi2_min.index(min(chi2_min))
-        results = results[ind_min]
+        if self.robust_fit:
+            robust = robust_2dfit(kernel, xi,
+                                  coord[:,0], coord[:,1], 
+                                  xi_weight, mask=mask)
+            robust.minimize_minuit(p0=self.p0_robust_fit)
+            kernel = copy.deecopy(robust.kernel_fit)
+        else:
+            p0 = kernel.theta
+            results_fmin = optimize.fmin(chi2,p0,disp=False)
+            results_bfgs = optimize.minimize(chi2,p0,method="L-BFGS-B")
+            results = [results_fmin, results_bfgs['x']]
+            chi2_min = [chi2(results[0]), chi2(results[1])]
+            ind_min = chi2_min.index(min(chi2_min))
+            results = results[ind_min]
+            kernel = kernel.clone_with_theta(results)
 
         self._2pcf = xi
         self._2pcf_weight = xi_weight
         self._2pcf_dist = distance
-        kernel = kernel.clone_with_theta(results)
         self._2pcf_fit = PCF(kernel.theta)
         self._2pcf_mask = mask
         self._kernel = copy.deepcopy(kernel)
