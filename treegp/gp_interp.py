@@ -99,7 +99,7 @@ class GPInterpolation(object):
                                                  self.min_sep, self.max_sep,
                                                  nbins=self.nbins,
                                                  anisotropic=self.anisotropic,
-                                                 robust_fit=self.robust_fit
+                                                 robust_fit=self.robust_fit,
                                                  p0=self.p0_robust_fit)
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.

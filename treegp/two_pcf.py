@@ -1,7 +1,7 @@
 import numpy as np
 import treecorr
 import treegp
-from treegp import eval_kernel
+from .kernels import eval_kernel
 from scipy import optimize
 from iminuit import Minuit
 import sklearn
@@ -66,10 +66,10 @@ class robust_2dfit(object):
 
         L = get_correlation_length_matrix(corr_length, g1, g2)
         invLam = np.linalg.inv(L)
-        kernel_used = self.kernel_class(invLam=invLam)
+        kernel_used = sigma**2 * self.kernel_class(invLam=invLam)
         pcf = kernel_used.__call__(self.coord,Y=np.zeros_like(self.coord))[:,0]
         self.kernel_fit = kernel_used
-        return pcf * sigma**2
+        return pcf
 
     def chi2(self, param):
         model = self._model_skl(1., param[0],
@@ -86,15 +86,13 @@ class robust_2dfit(object):
     def _minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self.m = Minuit.from_array_func(self.chi2, p0)
+            self.m = Minuit.from_array_func(self.chi2, p0, print_level=0)
             self.m.migrad()
         results = [self.m.values[key] for key in self.m.values.keys()]
         self._minuit_result = results
         self.result = [np.sqrt(self.alpha[0][0]), results[0],
                        results[1], results[2],
                        self.alpha[1][0]]
-        chi2 = self.chi2(self.result)
-        self.kernel_fit = np.sqrt(self.alpha[0][0])**2 * self.kernel_fit
 
     def minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
     
@@ -116,6 +114,8 @@ class robust_2dfit(object):
                 self._minimize_minuit(p0=new_p0)
                 if self.m.migrad_ok():
                     break
+        pcf = self._model_skl(self.result[0], self.result[1], 
+                              self.result[2], self.result[3])
 
 class two_pcf(object):
 
@@ -311,7 +311,8 @@ class two_pcf(object):
                                   coord[:,0], coord[:,1], 
                                   xi_weight, mask=mask)
             robust.minimize_minuit(p0=self.p0_robust_fit)
-            kernel = copy.deecopy(robust.kernel_fit)
+            kernel = copy.deepcopy(robust.kernel_fit)
+            cst = robust.result[-1]
         else:
             p0 = kernel.theta
             results_fmin = optimize.fmin(chi2,p0,disp=False)
@@ -321,11 +322,12 @@ class two_pcf(object):
             ind_min = chi2_min.index(min(chi2_min))
             results = results[ind_min]
             kernel = kernel.clone_with_theta(results)
+            cst = 0
 
         self._2pcf = xi
         self._2pcf_weight = xi_weight
         self._2pcf_dist = distance
-        self._2pcf_fit = PCF(kernel.theta)
+        self._2pcf_fit = PCF(kernel.theta) + cst
         self._2pcf_mask = mask
         self._kernel = copy.deepcopy(kernel)
         return kernel
