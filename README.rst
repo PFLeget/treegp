@@ -1,4 +1,5 @@
-[![Build Status](https://travis-ci.org/PFLeget/treegp.svg?branch=master)](https://travis-ci.org/PFLeget/treegp)
+.. image:: https://travis-ci.org/PFLeget/treegp.svg?branch=master
+    :target: https://travis-ci.org/PFLeget/treegp
 
 ____
 
