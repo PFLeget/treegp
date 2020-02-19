@@ -8,6 +8,7 @@ treegp/*.py~
 
 *.pyc
 *.py~
+.travis.yml~
 
 README.rst~
 
