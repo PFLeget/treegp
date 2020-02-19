@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/PFLeget/treegp.svg?branch=master)](https://travis-ci.org/PFLeget/treegp)
+
 ____
 
 **WARNING**: Package under development, more information will come soon
