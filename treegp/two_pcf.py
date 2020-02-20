@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 import treecorr
 import treegp
@@ -108,9 +109,9 @@ class robust_2dfit(object):
             g2 = g2.reshape(N_restart)
             size = size.reshape(N_restart)
             for i in range(N_restart):
-                print "restart fit because failure"
+                print("restart fit because failure")
                 new_p0 = [size[i], g1[i], g2[i]]
-                print new_p0
+                print(new_p0)
                 self._minimize_minuit(p0=new_p0)
                 if self.m.migrad_ok():
                     break

@@ -73,15 +73,12 @@ class meanify(object):
         self.coords0 = coords0[Filter]
         self.params0 = params0[Filter]
 
-    def save_results(self, directory='', name_output='mean_gp.fits'):
+    def save_results(self, name_output='mean_gp.fits'):
         """
         Write output mean function.
         
-        :param directory:   Directory where to save the output file. (default: '')
         :param name_output: Name of the output fits file. (default: 'mean_gp.fits')
         """
-        file_name_out = os.path.join(directory, name_output)
-
         dtypes = [('COORDS0', self.coords0.dtype, self.coords0.shape),
                   ('PARAMS0', self.params0.dtype, self.params0.shape),
                   ]
@@ -90,5 +87,5 @@ class meanify(object):
         data['COORDS0'] = self.coords0
         data['PARAMS0'] = self.params0
 
-        with fitsio.FITS(file_name_out,'rw',clobber=True) as f:
+        with fitsio.FITS(name_output,'rw',clobber=True) as f:
             f.write_table(data, extname='average_solution')
