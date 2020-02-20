@@ -57,7 +57,7 @@ def test_meanify():
     for n in range(nfields):
         meanify.add_field(coords[n], fields[n])
     meanify.meanify()
-    meanify.save_results(name_output=os.path.join('output',
+    meanify.save_results(name_output=os.path.join('outputs',
                                                   'mean_gp_stat_mean.fits'))
     coord, param = make_average(coord=meanify.coords0, gp=False)
     np.testing.assert_allclose(param, meanify.params0, atol=2e-1)
@@ -95,7 +95,7 @@ def test_gpinterp_meanify():
                                     optimizer=opt, anisotropic=True,
                                     normalize=True, nbins=21, min_sep=0.,
                                     max_sep=3.,
-                                    average_fits=os.path.join('output',
+                                    average_fits=os.path.join('outputs',
                                                               'mean_gp_stat_mean.fits'))
         gp.initialize(x, y, y_err=y_err)
         gp.solve()
