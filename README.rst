@@ -49,4 +49,4 @@ installs below):
 Python
 ``````
 
-``treegp`` can be run in python 2 and python 3 (need to be done)
+``treegp`` can be run in python 2.7, 3.5 and 3.6 
