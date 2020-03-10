@@ -24,15 +24,18 @@ class log_likelihood(object):
 
         :param kernel: Sklearn kernel object.
         """
-        K = kernel.__call__(self.X) + np.eye(len(self.y))*self.y_err**2
-        L = cholesky(K, overwrite_a=True, lower=False)
-        alpha = cho_solve((L, False), self.y, overwrite_b=False)
-        chi2 = np.dot(self.y, alpha)
-        log_det = np.sum(2.*np.log(np.diag(L)))
+        try:
+            K = kernel.__call__(self.X) + np.eye(len(self.y))*self.y_err**2
+            L = cholesky(K, overwrite_a=True, lower=False)
+            alpha = cho_solve((L, False), self.y, overwrite_b=False)
+            chi2 = np.dot(self.y, alpha)
+            log_det = np.sum(2.*np.log(np.diag(L)))
 
-        log_likelihood = -0.5 * chi2
-        log_likelihood -= (self.ndata / 2.) * np.log((2. * np.pi))
-        log_likelihood -= 0.5 * log_det
+            log_likelihood = -0.5 * chi2
+            log_likelihood -= (self.ndata / 2.) * np.log((2. * np.pi))
+            log_likelihood -= 0.5 * log_det
+        except:
+            log_likelihood = -np.inf
 
         return log_likelihood
 
