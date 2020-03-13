@@ -49,7 +49,7 @@ class GPInterpolation(object):
     """
     def __init__(self, kernel='RBF(1)', optimize=True, optimizer='two-pcf',
                  anisotropic=False, normalize=True, robust_fit=False, p0=[3000., 0.,0.],
-                 white_noise=0., n_neighbors=4, average_fits=None,
+                 white_noise=0., n_neighbors=4, average_fits=None, indice_meanify=None,
                  nbins=20, min_sep=None, max_sep=None):
 
         self.normalize = normalize
@@ -63,6 +63,7 @@ class GPInterpolation(object):
         self.max_sep = max_sep
         self.robust_fit = robust_fit
         self.p0_robust_fit = p0
+        self.indice_meanify = indice_meanify
 
         if isinstance(kernel,str):
             self.kernel_template = eval_kernel(kernel)
@@ -188,6 +189,8 @@ class GPInterpolation(object):
             neigh = KNeighborsRegressor(n_neighbors=self.n_neighbors)
             neigh.fit(self._X0, self._y0)
             average = neigh.predict(X)         
+            if self.indice_meanify is not None:
+                average = average[:,self.indice_meanify]
             return average
         else:
             return np.zeros((len(X[:,0])))
