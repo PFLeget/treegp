@@ -80,6 +80,7 @@ class robust_2dfit(object):
         FWF = np.dot(F.T, self.W).dot(F)
         Y = self.flat_data[self.mask].reshape((len(model), 1))
         self.alpha = np.linalg.inv(FWF).dot(np.dot(F.T, self.W).dot(Y))
+        self.alpha[0] = abs(self.alpha[0])
         self.residuals = self.flat_data[self.mask] - ((self.alpha[0] * model) + self.alpha[1])
         self.chi2_value = self.residuals.dot(self.W).dot(self.residuals.reshape((len(model), 1)))
         return self.chi2_value
