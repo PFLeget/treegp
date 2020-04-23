@@ -35,7 +35,7 @@ def test_gp_interp_1d():
 
             # Do gp interpolation without hyperparameters
             # fitting (truth is put initially).
-            gp = treegp.GPInterpolation(kernel=kernel, optimize=False,
+            gp = treegp.GPInterpolation(kernel=kernel, optimizer="none",
                                         white_noise=white_noise[i])
             gp.initialize(x, y, y_err=y_err)
 
@@ -72,7 +72,7 @@ def test_gp_interp_1d():
 
             new_x = np.linspace(np.max(x)+6.*l[i], np.max(x)+7.*l[i], npoints).reshape((npoints,1))
 
-            gp = treegp.GPInterpolation(kernel=kernel, optimize=False, normalize=False,
+            gp = treegp.GPInterpolation(kernel=kernel, optimizer="none", normalize=False,
                                         white_noise=white_noise[i])
             gp.initialize(x, y, y_err=y_err)
             y_predict, y_cov = gp.predict(new_x, return_cov=True)
@@ -115,7 +115,7 @@ def test_gp_interp_2d():
 
             # Do gp interpolation without hyperparameters
             # fitting (truth is put initially).
-            gp = treegp.GPInterpolation(kernel=kernel, optimize=False,
+            gp = treegp.GPInterpolation(kernel=kernel, optimizer="none",
                                         white_noise=white_noise[i])
             gp.initialize(x, y, y_err=y_err)
 
@@ -157,7 +157,7 @@ def test_gp_interp_2d():
                                    np.max(x)+6.*size[i], npoints)
             new_x = np.array([x1, x2]).T
 
-            gp = treegp.GPInterpolation(kernel=kernel, optimize=False, normalize=False,
+            gp = treegp.GPInterpolation(kernel=kernel, optimizer="none", normalize=False,
                                         white_noise=white_noise[i])
             gp.initialize(x, y, y_err=y_err)
             y_predict, y_cov = gp.predict(new_x, return_cov=True)

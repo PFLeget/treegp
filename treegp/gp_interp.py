@@ -21,8 +21,11 @@ class GPInterpolation(object):
                          sklearn.gaussian_process.kernels.Kernel object.  The reprs of
                          sklearn.gaussian_process.kernels will work, as well as the repr of a
                          custom piff VonKarman object.  [default: 'RBF(1)']
-    :param optimize:     Boolean indicating whether or not to try and optimize the kernel by
-                         computing the two-point correlation function.  [default: True]
+    :param optimizer:    Indicates which techniques to use for optimizing the kernel. Three options
+                         are available. "none" does not optimize hyperparameters and used the one 
+                         given int the kernel. "two-pcf" optimize the kernel on the 1d/2d 2-point 
+                         correlation function estimate by treecorr. "log-likelihood" used the 
+                         classical maximum likelihood method.
     :param anisotropic:  2D 2-point correlation function. Used 2D correlation function for the
                          fiting part of the GP instead of a 1D correlation function. [default: False]
     :param normalize:    Whether to normalize the interpolation parameters to have a mean of 0.
@@ -47,13 +50,12 @@ class GPInterpolation(object):
                          build in it. Build using meanify and piff output across different
                          exposures. See meanify documentation. [default: None]
     """
-    def __init__(self, kernel='RBF(1)', optimize=True, optimizer='two-pcf',
-                 anisotropic=False, normalize=True, robust_fit=False, p0=[3000., 0.,0.],
+    def __init__(self, kernel='RBF(1)', optimizer='two-pcf', anisotropic=False, 
+                 normalize=True, robust_fit=False, p0=[3000., 0.,0.],
                  white_noise=0., n_neighbors=4, average_fits=None, indice_meanify=None,
                  nbins=20, min_sep=None, max_sep=None):
 
         self.normalize = normalize
-        self.optimize = optimize
         self.optimizer = optimizer
         self.white_noise = white_noise
         self.n_neighbors = n_neighbors
@@ -70,7 +72,7 @@ class GPInterpolation(object):
         else:
             raise TypeError("kernel should be a string a list or a numpy.ndarray of string")
 
-        if self.optimizer not in ['two-pcf', 'log-likelihood']:
+        if self.optimizer not in ['two-pcf', 'log-likelihood', 'none']:
             raise ValueError("Only two-pcf and log-likelihood are supported for optimizer. Current value: %s"%(self.optimizer))
 
         if average_fits is not None:
@@ -92,7 +94,7 @@ class GPInterpolation(object):
         :param y:  The dependent responses.  (n_samples, n_targets)
         :param y_err: Error of y. (n_samples, n_targets)
         """
-        if self.optimize:
+        if self.optimizer is not "none":
             # Hyperparameters estimation using 2-point correlation
             # function information.
             if self.optimizer == 'two-pcf':

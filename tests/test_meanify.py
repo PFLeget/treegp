@@ -91,8 +91,7 @@ def test_gpinterp_meanify():
 
         # Do gp interpolation without hyperparameters
         # fitting (truth is put initially).
-        gp = treegp.GPInterpolation(kernel=kernel, optimize=True,
-                                    optimizer=opt, anisotropic=True,
+        gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt, anisotropic=True,
                                     normalize=True, nbins=21, min_sep=0.,
                                     max_sep=3.,
                                     average_fits=os.path.join('outputs',

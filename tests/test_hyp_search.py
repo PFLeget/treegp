@@ -28,8 +28,7 @@ def test_hyperparameter_search_1d():
 
             # Do gp interpolation without hyperparameters
             # fitting (truth is put initially).
-            gp = treegp.GPInterpolation(kernel=kernel, optimize=True,
-                                        optimizer=opt, anisotropic=False, 
+            gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt, anisotropic=False, 
                                         normalize=True, nbins=15, min_sep=0.1, 
                                         max_sep=max_sep[i])
             gp.initialize(x, y, y_err=y_err)
@@ -102,8 +101,7 @@ def test_hyperparameter_search_2d():
 
         # Do gp interpolation without hyperparameters
         # fitting (truth is put initially).
-        gp = treegp.GPInterpolation(kernel=kernel, optimize=True,
-                                    optimizer=opt, anisotropic=True,
+        gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt, anisotropic=True,
                                     normalize=True, nbins=21, min_sep=0.,
                                     max_sep=1., robust_fit=robust[n], p0=[0.3, 0.,0.])
         gp.initialize(x, y, y_err=y_err)
