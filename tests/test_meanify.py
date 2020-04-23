@@ -93,7 +93,7 @@ def test_gpinterp_meanify():
         # fitting (truth is put initially).
         gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt,
                                     normalize=True, nbins=21, min_sep=0.,
-                                    max_sep=3.,
+                                    max_sep=3., p0 = [0.5, 0, 0],
                                     average_fits=os.path.join('outputs',
                                                               'mean_gp_stat_mean.fits'))
         gp.initialize(x, y, y_err=y_err)
