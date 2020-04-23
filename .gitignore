@@ -5,6 +5,7 @@ __pycache__/
 
 treegp/*.pyc
 treegp/*.py~
+treegp/*.ipynb
 
 *.pyc
 *.py~
