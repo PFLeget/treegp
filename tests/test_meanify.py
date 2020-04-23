@@ -64,7 +64,7 @@ def test_meanify():
 
 @timer
 def test_gpinterp_meanify():
-    optimizer = ['log-likelihood', 'two-pcf']
+    optimizer = ['log-likelihood', 'anisotropic']
     npoints = [400, 2000]
     noise = 0.01
     sigma = 2.
@@ -91,7 +91,7 @@ def test_gpinterp_meanify():
 
         # Do gp interpolation without hyperparameters
         # fitting (truth is put initially).
-        gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt, anisotropic=True,
+        gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt,
                                     normalize=True, nbins=21, min_sep=0.,
                                     max_sep=3.,
                                     average_fits=os.path.join('outputs',

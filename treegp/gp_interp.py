@@ -23,11 +23,10 @@ class GPInterpolation(object):
                          custom piff VonKarman object.  [default: 'RBF(1)']
     :param optimizer:    Indicates which techniques to use for optimizing the kernel. Three options
                          are available. "none" does not optimize hyperparameters and used the one 
-                         given int the kernel. "two-pcf" optimize the kernel on the 1d/2d 2-point 
-                         correlation function estimate by treecorr. "log-likelihood" used the 
-                         classical maximum likelihood method.
-    :param anisotropic:  2D 2-point correlation function. Used 2D correlation function for the
-                         fiting part of the GP instead of a 1D correlation function. [default: False]
+                         given int the kernel. "two-pcf" optimize the kernel on the 1d 2-point 
+                         correlation function estimate by treecorr. "anisotropic" optimize the kernel 
+                         on the 2d 2-point correlation function estimate by treecorr.
+                         "log-likelihood" used the classical maximum likelihood method.
     :param normalize:    Whether to normalize the interpolation parameters to have a mean of 0.
                          Normally, the parameters being interpolated are not mean 0, so you would
                          want this to be True, but if your parameters have an a priori mean of 0,
@@ -50,7 +49,7 @@ class GPInterpolation(object):
                          build in it. Build using meanify and piff output across different
                          exposures. See meanify documentation. [default: None]
     """
-    def __init__(self, kernel='RBF(1)', optimizer='two-pcf', anisotropic=False, 
+    def __init__(self, kernel='RBF(1)', optimizer='two-pcf', 
                  normalize=True, p0=[3000., 0.,0.],
                  white_noise=0., n_neighbors=4, average_fits=None, indice_meanify=None,
                  nbins=20, min_sep=None, max_sep=None):
@@ -59,12 +58,11 @@ class GPInterpolation(object):
         self.optimizer = optimizer
         self.white_noise = white_noise
         self.n_neighbors = n_neighbors
-        self.anisotropic = anisotropic
         self.nbins = nbins
         self.min_sep = min_sep
         self.max_sep = max_sep
 
-        if self.anisotropic:
+        if self.optimizer is 'anisotropic':
             self.robust_fit = True
         else:
             self.robust_fit = False
@@ -77,8 +75,8 @@ class GPInterpolation(object):
         else:
             raise TypeError("kernel should be a string a list or a numpy.ndarray of string")
 
-        if self.optimizer not in ['two-pcf', 'log-likelihood', 'none']:
-            raise ValueError("Only two-pcf and log-likelihood are supported for optimizer. Current value: %s"%(self.optimizer))
+        if self.optimizer not in ['anisotropic', 'two-pcf', 'log-likelihood', 'none']:
+            raise ValueError("Only anisotropic, two-pcf, log-likelihood and none are supported for optimizer. Current value: %s"%(self.optimizer))
 
         if average_fits is not None:
             import fitsio
@@ -102,11 +100,12 @@ class GPInterpolation(object):
         if self.optimizer is not "none":
             # Hyperparameters estimation using 2-point correlation
             # function information.
-            if self.optimizer == 'two-pcf':
+            if self.optimizer in ['two-pcf', 'anisotropic']:
+                anisotropic = self.optimizer is 'anisotropic'
                 self._optimizer = treegp.two_pcf(X, y, y_err,
                                                  self.min_sep, self.max_sep,
                                                  nbins=self.nbins,
-                                                 anisotropic=self.anisotropic,
+                                                 anisotropic=anisotropic,
                                                  robust_fit=self.robust_fit,
                                                  p0=self.p0_robust_fit)
                 kernel = self._optimizer.optimizer(kernel)
@@ -219,10 +218,11 @@ class GPInterpolation(object):
 
         :param seed: seed of the random generator.
         """
+        anisotropic = self.optimizer is "anisotropic"
         pcf = treegp.two_pcf(self._X, self._y-self._mean-self._spatial_average, self._y_err,
                              self.min_sep, self.max_sep,
                              nbins=self.nbins,
-                             anisotropic=self.anisotropic)
+                             anisotropic=anisotropic)
         xi, xi_weight, distance, coord, mask = pcf.return_2pcf()
         return xi, xi_weight, distance, coord, mask
 
