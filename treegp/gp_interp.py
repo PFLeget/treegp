@@ -51,7 +51,7 @@ class GPInterpolation(object):
                          exposures. See meanify documentation. [default: None]
     """
     def __init__(self, kernel='RBF(1)', optimizer='two-pcf', anisotropic=False, 
-                 normalize=True, robust_fit=False, p0=[3000., 0.,0.],
+                 normalize=True, p0=[3000., 0.,0.],
                  white_noise=0., n_neighbors=4, average_fits=None, indice_meanify=None,
                  nbins=20, min_sep=None, max_sep=None):
 
@@ -63,7 +63,12 @@ class GPInterpolation(object):
         self.nbins = nbins
         self.min_sep = min_sep
         self.max_sep = max_sep
-        self.robust_fit = robust_fit
+
+        if self.anisotropic:
+            self.robust_fit = True
+        else:
+            self.robust_fit = False
+
         self.p0_robust_fit = p0
         self.indice_meanify = indice_meanify
 

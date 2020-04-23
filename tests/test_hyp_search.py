@@ -76,9 +76,8 @@ def test_hyperparameter_search_1d():
 
 @timer
 def test_hyperparameter_search_2d():
-    optimizer = ['log-likelihood', 'two-pcf', 'two-pcf']
-    robust = [False, False, True]
-    npoints = [400, 2000, 2000]
+    optimizer = ['log-likelihood', 'two-pcf']
+    npoints = [400, 2000]
 
     noise = 0.01
     sigma = 2.
@@ -103,7 +102,7 @@ def test_hyperparameter_search_2d():
         # fitting (truth is put initially).
         gp = treegp.GPInterpolation(kernel=kernel, optimizer=opt, anisotropic=True,
                                     normalize=True, nbins=21, min_sep=0.,
-                                    max_sep=1., robust_fit=robust[n], p0=[0.3, 0.,0.])
+                                    max_sep=1., p0=[0.3, 0.,0.])
         gp.initialize(x, y, y_err=y_err)
         gp.solve()
         # test if found hyperparameters are close the true hyperparameters.
