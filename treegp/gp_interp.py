@@ -101,7 +101,7 @@ class GPInterpolation(object):
             # Hyperparameters estimation using 2-point correlation
             # function information.
             if self.optimizer in ['two-pcf', 'anisotropic']:
-                anisotropic = self.optimizer is 'anisotropic'
+                anisotropic = self.optimizer == 'anisotropic'
                 self._optimizer = treegp.two_pcf(X, y, y_err,
                                                  self.min_sep, self.max_sep,
                                                  nbins=self.nbins,
