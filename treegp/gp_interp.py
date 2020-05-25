@@ -62,7 +62,7 @@ class GPInterpolation(object):
         self.min_sep = min_sep
         self.max_sep = max_sep
 
-        if self.optimizer is 'anisotropic':
+        if self.optimizer == 'anisotropic':
             self.robust_fit = True
         else:
             self.robust_fit = False
@@ -218,7 +218,7 @@ class GPInterpolation(object):
 
         :param seed: seed of the random generator.
         """
-        anisotropic = self.optimizer is "anisotropic"
+        anisotropic = self.optimizer == "anisotropic"
         pcf = treegp.two_pcf(self._X, self._y-self._mean-self._spatial_average, self._y_err,
                              self.min_sep, self.max_sep,
                              nbins=self.nbins,

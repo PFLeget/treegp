@@ -315,6 +315,7 @@ class two_pcf(object):
             robust.minimize_minuit(p0=self.p0_robust_fit)
             kernel = copy.deepcopy(robust.kernel_fit)
             cst = robust.result[-1]
+            self._results_robust = robust.result
         else:
             p0 = kernel.theta
             results_fmin = optimize.fmin(chi2,p0,disp=False)
