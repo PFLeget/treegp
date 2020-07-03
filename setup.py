@@ -45,7 +45,7 @@ if sys.version >= '3.0':
     dependencies += ['iminuit']
 else:
     # iminuit 1.4 fails on python 2.7
-    dependencies += ['iminuit==1.3.8']
+    dependencies += ['iminuit>=1.3,<1.4']
 
 package_data = {}
 
