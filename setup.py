@@ -34,7 +34,7 @@ package_data = {}
 
 setup(name=name,
       description=("treegp"),
-      classifiers=["Topic :: Scientific :: Astronomy",
+      classifiers=["Topic :: Scientific/Engineering :: Astronomy",
                    "Intended Audience :: Science/Research"],
       author="PFLeget",
       version=treegp_version,
