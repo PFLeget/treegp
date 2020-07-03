@@ -39,6 +39,14 @@ packages = find_packages()
 # Scripts (none yet, but if we make any, they will live in scripts/)
 scripts = glob.glob("scripts/*.py")
 
+# Dependencies
+dependencies = ['numpy', 'scipy', 'treecorr>=4.0', 'fitsio>=0.9.12', 'scikit-learn>=0.18']
+if sys.version >= '3.0':
+    dependencies += ['iminuit']
+else:
+    # iminuit 1.4 fails on python 2.7
+    dependencies += ['iminuit==1.3.8']
+
 package_data = {}
 
 setup(name=name,
@@ -50,6 +58,7 @@ setup(name=name,
       author="PFLeget",
       url="https://github.com/PFLeget/treegp",
       download_url="https://github.com/PFLeget/treegp/releases/tag/v%s.zip"%treegp_version,
+      install_requires=dependencies,
       version=treegp_version,
       packages=packages,
       scripts=scripts)
