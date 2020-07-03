@@ -3,8 +3,10 @@ Checklist for making a new release:
 - Run test suite on as many machines as possible.
 - Check the travis runs to make sure they are all passing.
 - Update the version number to the desired M.m.r value in treegp/_version.py.
+- git commit -m vM.m.r              -- commit this version with the right version number
 - git tag -a vM.m.r -m vM.m.r       -- tag the current version
-- git push --tags                   -- push tags to github
+- git push                          -- push the commit to github (This doesn't push tags.)
+- git push --tags                   -- push the tag to github (This doesn't push commits.)
 - python setup.py install           -- to get the installed code with the new version number.
 - rm -r treegp.egg-info             -- clear out old egg file if it exists.
 - python setup.py sdist             -- build the source distribution tarball
