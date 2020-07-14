@@ -58,8 +58,6 @@ class meanify(object):
                                                           statistic=self.stat_used)
         average = average.T
         self._average = average
-        self._u0 = u0
-        self._v0 = v0
         average = average.reshape(-1)
         Filter &= np.isfinite(average).reshape(-1)
         params0 = average
@@ -68,6 +66,8 @@ class meanify(object):
         u0 = u0[:-1] + (u0[1] - u0[0])/2.
         v0 = v0[:-1] + (v0[1] - v0[0])/2.
         u0, v0 = np.meshgrid(u0, v0)
+        self._u0 = u0
+        self._v0 = v0
 
         coords0 = np.array([u0.reshape(-1), v0.reshape(-1)]).T
 
