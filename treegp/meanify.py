@@ -57,6 +57,9 @@ class meanify(object):
                                                           params, bins=binning,
                                                           statistic=self.stat_used)
         average = average.T
+        self._average = average
+        self._u0 = u0
+        self._v0 = v0
         average = average.reshape(-1)
         Filter &= np.isfinite(average).reshape(-1)
         params0 = average
@@ -81,11 +84,17 @@ class meanify(object):
         """
         dtypes = [('COORDS0', self.coords0.dtype, self.coords0.shape),
                   ('PARAMS0', self.params0.dtype, self.params0.shape),
+                  ('_AVERAGE', self._average.dtype, self._average.shape),
+                  ('_U0', self.u0.dtype, self.u0.shape),
+                  ('_V0', self.v0.dtype, self.v0.shape),
                   ]
         data = np.empty(1, dtype=dtypes)
         
         data['COORDS0'] = self.coords0
         data['PARAMS0'] = self.params0
+        data['_AVERAGE'] = self._average
+        data['_U0'] = self._u0
+        data['_V0'] = self._v0
 
         with fitsio.FITS(name_output,'rw',clobber=True) as f:
             f.write_table(data, extname='average_solution')
