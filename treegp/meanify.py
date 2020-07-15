@@ -17,15 +17,16 @@ class meanify(object):
 
         self.bin_spacing = bin_spacing
 
-        if statistics not in ['mean', 'median']:
-            raise ValueError("%s is not a suported statistic (only mean and median are currently suported)"
+        if statistics not in ['mean', 'median', 'weighted']:
+            raise ValueError("%s is not a suported statistic (only mean, weighted, and median are currently suported)"
                              %(statistics))
         self.stat_used = statistics #default statistics: arithmetic mean over each bin
 
         self.coords = []
         self.params = []
+        self.params_err = []
 
-    def add_field(self, coord, param):
+    def add_field(self, coord, param, params_err=None):
         """
         Add new data to compute the mean function. 
 
@@ -36,6 +37,11 @@ class meanify(object):
             raise ValueError('meanify is supported only in 2d for the moment.')
         self.coords.append(coord)
         self.params.append(param)
+        if self.stat_used == 'weighted':
+            if params_err is None:
+                 raise ValueError('Need an associated error to params')
+            else:
+                self.params_err.append(params_err)
     
     def meanify(self):
         """
@@ -43,6 +49,9 @@ class meanify(object):
         """
         params = np.concatenate(self.params)
         coords = np.concatenate(self.coords, axis=0)
+        if self.stat_used == 'weighted':
+            params_err = np.concatenate(self.params_err)
+            weights = 1./params_err**2
 
         lu_min, lu_max = np.min(coords[:,0]), np.max(coords[:,0])
         lv_min, lv_max = np.min(coords[:,1]), np.max(coords[:,1])
@@ -53,9 +62,18 @@ class meanify(object):
         nbinning = (len(binning[0]) - 1) * (len(binning[1]) - 1)
         Filter = np.array([True]*nbinning)
 
-        average, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
-                                                          params, bins=binning,
-                                                          statistic=self.stat_used)
+        if self.stat_used == 'weighted':
+            sum_wp, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
+                                                             weights*params, bins=binning,
+                                                             statistic='sum')
+            sum_w, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
+                                                            weights, bins=binning,
+                                                            statistic='sum')
+            average = sum_wp / sum_w
+        else:
+            average, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
+                                                              params, bins=binning,
+                                                              statistic=self.stat_used)
         average = average.T
         self._average = average
         average = average.reshape(-1)
