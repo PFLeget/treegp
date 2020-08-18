@@ -43,7 +43,8 @@ class meanify(object):
             else:
                 self.params_err.append(params_err)
     
-    def meanify(self):
+    def meanify(self, lu_min=None, lu_max=None,
+                lv_min=None, lv_max=None):
         """
         Compute the mean function.
         """
@@ -53,8 +54,14 @@ class meanify(object):
             params_err = np.concatenate(self.params_err)
             weights = 1./params_err**2
 
-        lu_min, lu_max = np.min(coords[:,0]), np.max(coords[:,0])
-        lv_min, lv_max = np.min(coords[:,1]), np.max(coords[:,1])
+        if lu_min is None:
+            lu_min = np.min(coords[:,0])
+        if lu_max is None:
+            lu_max = np.max(coords[:,0])
+        if lv_min is None:
+            lv_min = np.min(coords[:,1])
+        if lv_max is None:
+            lv_max = np.max(coords[:,1])
 
         nbin_u = int((lu_max - lu_min) / self.bin_spacing)
         nbin_v = int((lv_max - lv_min) / self.bin_spacing)
