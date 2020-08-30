@@ -70,6 +70,9 @@ class meanify(object):
         Filter = np.array([True]*nbinning)
 
         if self.stat_used == 'weighted':
+            sum_wpp, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
+                                                              weights*params*params, bins=binning,
+                                                              statistic='sum')
             sum_wp, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
                                                              weights*params, bins=binning,
                                                              statistic='sum')
@@ -77,15 +80,23 @@ class meanify(object):
                                                             weights, bins=binning,
                                                             statistic='sum')
             average = sum_wp / sum_w
+            wvar = (1. / sum_w) * (sum_wpp - 2.*average*sum_wp + average*average*sum_w)
+            wrms = np.sqrt(wvar)
         else:
             average, u0, v0, bin_target = binned_statistic_2d(coords[:,0], coords[:,1],
                                                               params, bins=binning,
                                                               statistic=self.stat_used)
+            wrms = np.zeros_like(average)
         average = average.T
+        wrms = wrms.T
         self._average = average
+        self._wrms = wrms
         average = average.reshape(-1)
+        wrms = wrms.reshape(-1)
         Filter &= np.isfinite(average).reshape(-1)
+        Filter &= np.isfinite(wrms).reshape(-1)
         params0 = average
+        wrms0 = wrms
 
         # get center of each bin 
         u0 = u0[:-1] + (u0[1] - u0[0])/2.
@@ -100,6 +111,7 @@ class meanify(object):
         # the 2D statistic computation) 
         self.coords0 = coords0[Filter]
         self.params0 = params0[Filter]
+        self.wrms0= wrms0[Filter]
 
     def save_results(self, name_output='mean_gp.fits'):
         """
@@ -109,7 +121,9 @@ class meanify(object):
         """
         dtypes = [('COORDS0', self.coords0.dtype, self.coords0.shape),
                   ('PARAMS0', self.params0.dtype, self.params0.shape),
+                  ('WRMS0', self.wrms0.dtype, self.wrms0.shape),
                   ('_AVERAGE', self._average.dtype, self._average.shape),
+                  ('_WRMS', self._wrms.dtype, self._wrms.shape),
                   ('_U0', self._u0.dtype, self._u0.shape),
                   ('_V0', self._v0.dtype, self._v0.shape),
                   ]
@@ -117,7 +131,9 @@ class meanify(object):
         
         data['COORDS0'] = self.coords0
         data['PARAMS0'] = self.params0
+        data['WRMS0'] = self.wrms0
         data['_AVERAGE'] = self._average
+        data['_WRMS'] = self._wrms
         data['_U0'] = self._u0
         data['_V0'] = self._v0
 

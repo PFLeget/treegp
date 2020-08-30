@@ -65,7 +65,7 @@ def test_meanify():
 @timer
 def test_gpinterp_meanify():
     optimizer = ['log-likelihood', 'anisotropic']
-    npoints = [400, 2000]
+    npoints = [600, 2000]
     noise = 0.01
     sigma = 2.
     size = 0.5
