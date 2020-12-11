@@ -15,16 +15,18 @@ from scipy.linalg import cholesky, cho_solve
 
 class GPInterpolation(object):
     """
-    An interpolator that uses two-point correlation function and gaussian process to interpolate a single surface.
+    An interpolator that uses 2-point correlation function informations
+    or Maximum Likelihood informations to do a gaussian process to interpolate
+    a single surface.
 
     :param kernel:       A string that can be `eval`ed to make a
                          sklearn.gaussian_process.kernels.Kernel object.  The reprs of
                          sklearn.gaussian_process.kernels will work, as well as the repr of a
-                         custom piff VonKarman object.  [default: 'RBF(1)']
+                         custom treegp VonKarman object.  [default: 'RBF(1)']
     :param optimizer:    Indicates which techniques to use for optimizing the kernel. Three options
-                         are available. "none" does not optimize hyperparameters and used the one 
-                         given int the kernel. "two-pcf" optimize the kernel on the 1d 2-point 
-                         correlation function estimate by treecorr. "anisotropic" optimize the kernel 
+                         are available. "none" does not optimize hyperparameters and used the one
+                         given in the kernel. "two-pcf" optimize the kernel on the 1d 2-point
+                         correlation function estimate by treecorr. "anisotropic" optimize the kernel
                          on the 2d 2-point correlation function estimate by treecorr.
                          "log-likelihood" used the classical maximum likelihood method.
     :param normalize:    Whether to normalize the interpolation parameters to have a mean of 0.
@@ -33,7 +35,7 @@ class GPInterpolation(object):
                          then subtracting off the realized mean would be invalid.  [default: True]
     :param white_noise:  A float value that indicate the ammount of white noise that you want to
                          use during the gp interpolation. This is an additional uncorrelated noise
-                         added to the error of the PSF parameters. [default: 0.]
+                         added to the error of the interpolated parameters. [default: 0.]
     :param n_neighbors:  Number of neighbors to used for interpolating the spatial average using
                          a KNeighbors interpolation. Used only if average_fits is not None. [defaulf: 4]
     :param nbins:        Number of bins (if 1D correlation function) of the square root of the number
@@ -45,8 +47,8 @@ class GPInterpolation(object):
     :param max_sep:      Maximum separation between pairs when computing 2-point correlation
                          function. In the same units as the coordinates of the field.
                          Compute automaticaly if it is not given. [default: None]
-    :param average_fits: A fits file that have the spatial average functions of PSF parameters
-                         build in it. Build using meanify and piff output across different
+    :param average_fits: A fits file that have the spatial average functions of the interpolated parameter
+                         build in it. Build using meanify output across different
                          exposures. See meanify documentation. [default: None]
     """
     def __init__(self, kernel='RBF(1)', optimizer='two-pcf', 
@@ -93,9 +95,9 @@ class GPInterpolation(object):
         """Update the Kernel with data.
 
         :param kernel: sklearn.gaussian_process kernel.
-        :param X:  The independent covariates.  (n_samples, 2)
-        :param y:  The dependent responses.  (n_samples, n_targets)
-        :param y_err: Error of y. (n_samples, n_targets)
+        :param X:  Coordinates of the field.  (n_samples, 1 or 2)
+        :param y:  Values of the field.  (n_samples)
+        :param y_err: Error of y. (n_samples)
         """
         if self.optimizer is not "none":
             # Hyperparameters estimation using 2-point correlation
@@ -115,34 +117,34 @@ class GPInterpolation(object):
                 kernel = self._optimizer.optimizer(kernel)
         return kernel
 
-    def predict(self, Xstar, return_cov=False):
-        """ Predict responses given covariates.
+    def predict(self, X, return_cov=False):
+        """ Predict responses to given coordinates.
 
-        :param Xstar:  The independent covariates at which to interpolate.  (n_samples, 2).
-        :returns:  Regressed parameters  (n_samples, n_targets)
+        :param X:  The coordinates at which to interpolate.  (n_samples, 1 or 2).
+        :returns:  Regressed parameters  (n_samples)
         """
         y_init = copy.deepcopy(self._y)
         y_err = copy.deepcopy(self._y_err)
 
-        ystar, y_cov = self.return_gp_predict(y_init-self._mean-self._spatial_average,
-                                              self._X, Xstar, self.kernel, y_err=y_err,
-                                              return_cov=return_cov)
-        ystar = ystar.T
-        spatial_average = self._build_average_meanify(Xstar)
-        ystar += self._mean + spatial_average
+        y_interp, y_cov = self.return_gp_predict(y_init-self._mean-self._spatial_average,
+                                                 self._X, X, self.kernel, y_err=y_err,
+                                                 return_cov=return_cov)
+        y_interp = y_interp.T
+        spatial_average = self._build_average_meanify(X)
+        y_interp += self._mean + spatial_average
         if return_cov:
-            return ystar, y_cov
+            return y_interp, y_cov
         else:
-            return ystar
+            return y_interp
 
     def return_gp_predict(self, y, X1, X2, kernel, y_err, return_cov=False):
         """Compute interpolation with gaussian process for a given kernel.
 
-        :param y:  The dependent responses.  (n_samples, n_targets)
-        :param X1:  The independent covariates.  (n_samples, 2)
-        :param X2:  The independent covariates at which to interpolate.  (n_samples, 2)
+        :param y:      Values of the field.  (n_samples)
+        :param X1:     The coodinates of the field.  (n_samples, 1 or 2)
+        :param X2:     The coordinates at which to interpolate.  (n_samples, 1 or 2)
         :param kernel: sklearn.gaussian_process kernel.
-        :param y_err: Error of y. (n_samples, n_targets)
+        :param y_err:  Error of y. (n_samples)
         """
         HT = kernel.__call__(X2, Y=X1)
         K = kernel.__call__(X1) + np.eye(len(y))*y_err**2
@@ -159,9 +161,11 @@ class GPInterpolation(object):
 
     def initialize(self, X, y, y_err=None):
         """Initialize both the interpolator to some state prefatory to any solve iterations and
-        initialize the stars for use with this interpolator.
+        initialize the field values for use with this interpolator.
 
-        :param stars:   A list of Star instances to interpolate between
+        :param X:     The coodinates of the field.  (n_samples, 1 or 2)
+        :param y:     Values of the field.  (n_samples)
+        :param y_err: Error of y. (n_samples)
         """
         self.kernel = copy.deepcopy(self.kernel_template)
 
@@ -189,7 +193,7 @@ class GPInterpolation(object):
         """Compute spatial average from meanify output for a given coordinate using KN interpolation.
         If no average_fits was given, return array of 0.
 
-        :param X: Coordinates of training stars or coordinates where to interpolate. (n_samples, 2)
+        :param X: Coordinates of training coordinates where to interpolate. (n_samples, 1 or 2)
         """
         if np.sum(np.equal(self._X0, 0)) != len(self._X0[:,0])*len(self._X0[0]):
             neigh = KNeighborsRegressor(n_neighbors=self.n_neighbors)
@@ -203,8 +207,8 @@ class GPInterpolation(object):
 
     def solve(self):
         """Set up this GPInterp object.
-
-        :param stars:    A list of Star instances to interpolate between
+        Solve for hyperparameters if requested using 2-point correlation
+        function method or maximum likelihood.
         """
         self._init_theta = []
         kernel = copy.deepcopy(self.kernel)
@@ -215,8 +219,6 @@ class GPInterpolation(object):
     def return_2pcf(self):
         """
         Return 2-point correlation function and its variance using Bootstrap.
-
-        :param seed: seed of the random generator.
         """
         anisotropic = self.optimizer == "anisotropic"
         pcf = treegp.two_pcf(self._X, self._y-self._mean-self._spatial_average, self._y_err,
