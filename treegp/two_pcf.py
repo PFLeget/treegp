@@ -250,6 +250,8 @@ class two_pcf(object):
         xi, distance, coord, mask = self.comp_2pcf(self.X, self.y, self.y_err)
         if self.anisotropic:
             # Choice done from Andy Taylor et al. 2012
+            # see https://doi.org/10.1093/mnras/stt270
+            # equation 35
             def f_bias(x, npixel=len(xi[mask])):
                 top = x - 1.
                 bottom = x - npixel - 2.
