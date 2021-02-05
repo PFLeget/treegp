@@ -99,7 +99,7 @@ class GPInterpolation(object):
         :param y:  Values of the field.  (n_samples)
         :param y_err: Error of y. (n_samples)
         """
-        if self.optimizer is not "none":
+        if self.optimizer != "none":
             # Hyperparameters estimation using 2-point correlation
             # function information.
             if self.optimizer in ['two-pcf', 'anisotropic']:
