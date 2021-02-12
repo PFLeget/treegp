@@ -43,7 +43,7 @@ def eval_kernel(kernel):
         raise RuntimeError("Failed to evaluate kernel string {0!r}.  "
                            "Original exception: {1}".format(kernel, e))
 
-    if type(k.theta) is property:
+    if isinstance(k.theta, property):
         raise TypeError("String provided was not initialized properly")
     return k
 

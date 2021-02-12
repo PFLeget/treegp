@@ -36,10 +36,10 @@ def test_hyperparameter_search_1d():
             # test if found hyperparameters are close the true hyperparameters.
             np.testing.assert_allclose(kernel_skl.theta, gp.kernel.theta, atol=7e-1)
             
-            if opt is "two-pcf":
+            if opt == "two-pcf":
                 xi, xi_weight, distance, coord, mask = gp.return_2pcf()
                 np.testing.assert_allclose(xi, gp._optimizer._2pcf, atol=1e-10)
-            if opt is "log-likelihood":
+            if opt == "log-likelihood":
                 logL = gp.return_log_likelihood()
                 np.testing.assert_allclose(logL, gp._optimizer._logL, atol=1e-10)
 
