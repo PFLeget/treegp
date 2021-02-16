@@ -5,9 +5,10 @@ branches:
 language: python
 python:
     - 2.7
+    - 3.5
     - 3.6
     - 3.7
-    - 3.5
+    - 3.8
 
 compiler:
     - g++
@@ -29,7 +30,6 @@ install:
     - pip install nose codecov
 
 script:
-    - echo TEST SETUPTOOLS
     - python setup.py install --prefix=$HOME
     - cd tests
     - nosetests --with-coverage --cover-package=treegp
