@@ -7,7 +7,7 @@ python:
     - 2.7
     - 3.6
     - 3.7
-    - 3.5.6
+    - 3.5
 
 compiler:
     - g++
@@ -29,10 +29,7 @@ install:
     - pip install nose codecov
 
 script:
-    - echo PF ICI
-    - echo $HOME
-    - echo $TRAVIS_PYTHON_VERSION
-    - echo $PYTHONPATH
+    - echo TEST SETUPTOOLS
     - python setup.py install --prefix=$HOME
     - cd tests
     - nosetests --with-coverage --cover-package=treegp
