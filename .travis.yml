@@ -29,6 +29,10 @@ install:
     - pip install nose codecov
 
 script:
+    - echo PF ICI
+    - echo $HOME
+    - echo $TRAVIS_PYTHON_VERSION
+    - echo $PYTHONPATH
     - python setup.py install --prefix=$HOME
     - cd tests
     - nosetests --with-coverage --cover-package=treegp
