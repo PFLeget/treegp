@@ -4,12 +4,12 @@ from scipy import optimize
 from scipy.linalg import cholesky, cho_solve
 
 class log_likelihood(object):
-        """Return and optimize (if requested) the log likelihood of gaussian process.
+    """Return and optimize (if requested) the log likelihood of gaussian process.
 
-        :param X:      Coordinates of the field.  (n_samples, 1 or 2)
-        :param y:      Values of the field.  (n_samples)
-        :param y_err:  Error of y. (n_samples)
-        """
+    :param X:      Coordinates of the field.  (n_samples, 1 or 2)
+    :param y:      Values of the field.  (n_samples)
+    :param y_err:  Error of y. (n_samples)
+    """
     def __init__(self, X, y, y_err):
         self.X = X
         self.ndata = len(self.X[:,0])
