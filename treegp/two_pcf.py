@@ -9,12 +9,19 @@ import sklearn
 import copy
 import warnings
 
-
 def get_correlation_length_matrix(size, e1, e2):
-    if abs(e1)>1:
-        e1 = 0
-    if abs(e2)>1:
-        e2 = 0
+    """
+    Produce correlation matrix to introduce anisotropy in kernel.
+    Used same parametrization as galaxy shape measurement
+    in gravitational weak lensing because this is
+    mathematicaly equivalent (anistropic kernel will have
+    an elliptical shape).
+
+    :param size:   Correlation lenght of the kernel.
+    :param e1, e2: Shear applied to isotropic kernel.
+    """
+    if abs(e1)>1 or abs(e2)>1:
+        raise ValueError('abs value of e1 and e2 must be lower than one')
     e = np.sqrt(e1**2 + e2**2)
     q = (1-e) / (1+e)
     phi = 0.5 * np.arctan2(e2,e1)
@@ -26,7 +33,12 @@ def get_correlation_length_matrix(size, e1, e2):
     return L
 
 def get_kernel_class(A):
+    """
+    Check that the given kernel is an AnisotropicVonKarman or an
+    AnisotropicRBF kernel.
 
+    :param A: sklearn.gaussian_process.kernels
+    """
     if A.__class__ in [treegp.kernels.AnisotropicVonKarman,
                        treegp.kernels.AnisotropicRBF,
                        sklearn.gaussian_process.kernels.Product]:
@@ -120,27 +132,27 @@ class robust_2dfit(object):
                               self.result[2], self.result[3])
 
 class two_pcf(object):
+    """
+    Fit statistical uncertaintie on two-point correlation function using bootstraping.
 
+    :param X:           Coordinates of the field.  (n_samples, 1 or 2)
+    :param y:           Values of the field. (n_samples)
+    :param y_err:       Error of y. (n_samples)
+    :param min_sep:     Minimum bin for treecorr. (float)
+    :param max_sep:     Maximum bin for treecorr. (float)
+    :param nbins:       Number of bins (if 1D correlation function) of the square root of the number
+                        of bins (if 2D correlation function) used in TreeCorr to compute the
+                        2-point correlation function. [default: 20]
+    :param anisotropic: 2D 2-point correlation function.
+                        Used 2D correlation function for the
+                        fiting part of the GP. (Boolean)
+    :param robust_fit:  Used minuit to fit hyperparameter. Works only
+                        anisotropic is True. (Boolean)
+    """
     def __init__(self, X, y, y_err,
                  min_sep, max_sep, nbins=20, 
                  anisotropic=False, robust_fit=False, 
                  p0=[3000., 0., 0.]):
-        """Fit statistical uncertaintie on two-point correlation function using bootstraping.
-
-        :param X:           The independent covariates.  (n_samples, 2)
-        :param y:           The dependent responses.  (n_samples, n_targets)
-        :param y_err:       Error of y. (n_samples, n_targets)
-        :param min_sep:     Minimum bin for treecorr. (float)
-        :param max_sep:     Maximum bin for treecorr. (float)
-        :param nbins:       Number of bins (if 1D correlation function) of the square root of the number
-                            of bins (if 2D correlation function) used in TreeCorr to compute the
-                            2-point correlation function. [default: 20]
-        :param anisotropic: 2D 2-point correlation function.
-                            Used 2D correlation function for the
-                            fiting part of the GP. (Boolean)
-        :param robust_fit:  Used minuit to fit hyperparameter. Works only
-                            anisotropic is True. (Boolean)
-        """
         self.ndim = np.shape(X)[1]
         if self.ndim not in [1, 2]:
             raise ValueError('two-pcf support only 1d and 2d modeling for the moment. curent ndim: %i'%(self.ndim))
@@ -159,7 +171,7 @@ class two_pcf(object):
 
     def resample_bootstrap(self):
         """
-        Make a single bootstarp resampling on data.
+        Make a single bootstrap resampling on data.
         """
         npsfs = len(self.y)
 
@@ -175,9 +187,9 @@ class two_pcf(object):
         """
         Estimate 2-point correlation function using TreeCorr.
 
-        :param X:  The independent covariates.  (n_samples, 2)
-        :param y:  The dependent responses.  (n_samples, n_targets)
-        :param y_err: Error of y. (n_samples, n_targets)
+        :param X:  Coordinates of the field. (n_samples, 1 or 2)
+        :param y:  Values of the field. (n_samples)
+        :param y_err: Error of y. (n_samples)
         """
         if np.sum(y_err) == 0:
             w = None

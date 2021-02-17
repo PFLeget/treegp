@@ -4,14 +4,13 @@ from scipy import optimize
 from scipy.linalg import cholesky, cho_solve
 
 class log_likelihood(object):
+        """Return and optimize (if requested) the log likelihood of gaussian process.
 
-    def __init__(self, X, y, y_err):
-        """Fit statistical uncertaintie on two-point correlation function using bootstraping.
-
-        :param X:      The independent covariates.  (n_samples, 2)
-        :param y:      The dependent responses.  (n_samples, n_targets)
-        :param y_err:  Error of y. (n_samples, n_targets)
+        :param X:      Coordinates of the field.  (n_samples, 1 or 2)
+        :param y:      Values of the field.  (n_samples)
+        :param y_err:  Error of y. (n_samples)
         """
+    def __init__(self, X, y, y_err):
         self.X = X
         self.ndata = len(self.X[:,0])
         self.y = y
