@@ -59,7 +59,18 @@ def get_kernel_class(A):
         raise ValueError('Work only with treegp.kernels.AnisotropicVonKarman and treegp.kernels.AnisotropicRBF')
 
 class robust_2dfit(object):
+    """
+    Fit hyperparameters on 2D two-point correlation when the analytical profil can
+    be discribed as a Radial Basis Function such as a Gaussian kernel or a
+    von Karman kernel.
 
+    :param kernel:    sklearn.gaussian_process.kernels
+    :param x:         x coordinates of the 2D two point correlation function.
+    :param y:         y coordinates of the 2D two point correlation function.
+    :param flat_data: flatten 2D two point correlation function.
+    :param W:         Inverse of the covariance matrix got from Bootstrap.
+    :param mask:      Mask symetric area for Radial basi Function.
+    """
     def __init__(self, kernel, flat_data, x, y, W, mask=None):
 
         if mask is None:
@@ -76,7 +87,14 @@ class robust_2dfit(object):
         self.N = int(np.sqrt(len(self.x)))
 
     def _model_skl(self, sigma, corr_length, g1, g2):
+        """
+        Build analytical two point correlation function
+        from sklearn kernel.
 
+        :param sigma:         Standard deviation of the gaussian random field.
+        :param corr_length:   Correlation lenght of the kernel.
+        :param g1, g2:        Shear applied to isotropic kernel.
+        """
         L = get_correlation_length_matrix(corr_length, g1, g2)
         invLam = np.linalg.inv(L)
         kernel_used = sigma**2 * self.kernel_class(invLam=invLam)
@@ -85,6 +103,18 @@ class robust_2dfit(object):
         return pcf
 
     def chi2(self, param):
+        """
+        Chi2 function that iminuit will minimize.
+
+        Note: only non linear parameters are searched during
+        the minimization. As linear parameters have a unique
+        solution for a given set of non-linear parameters,
+        am solving the equation to get the analytical solution
+        for the linear parameter (alpha).
+
+        :param param: list of non-linear parameters to search.
+                      (correlation lenght, e1, and e2).
+        """
         model = self._model_skl(1., param[0],
                                 param[1], param[2])
         model = model[self.mask]
@@ -98,6 +128,11 @@ class robust_2dfit(object):
         return self.chi2_value
 
     def _minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
+        """
+        Launch a single minimization by minuit given a set of starting point.
+
+        :param p0: List of starting points.
+        """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.m = Minuit.from_array_func(self.chi2, p0, print_level=0)
@@ -109,7 +144,13 @@ class robust_2dfit(object):
                        self.alpha[1][0]]
 
     def minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
-    
+        """
+        Launch the minimization by minuit given a set of starting point.
+        Launch again on different starting point if minuit failed to find
+        a solution.
+
+        :param p0: List of starting points.
+        """
         self._minimize_minuit(p0=p0)
 
         if not self.m.migrad_ok():
