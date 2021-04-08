@@ -16,8 +16,8 @@ treegp have some specific features compared to other gaussian processes availabl
 *   It is possible to perform the gaussian process interpolation around a mean function
 *   Tools are given to compute the mean function
 
-Waiting the paper, the description of the training can be found in french at least for the mean function
-`here <https://tel.archives-ouvertes.fr/tel-01467899>`_ .
+``treegp`` was originally developed for Point Spread Function interpolation within `Piff <https://github.com/rmjarvis/Piff>`_. There is a specific article that describes the math used in ``treegp`` in the context of modelling astrometric shifts of the Subaru Telescope due to atmospheric turbulences. This article can be found 
+`here <https://arxiv.org/abs/2103.09881>`_.
 
 
 Installation
