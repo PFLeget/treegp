@@ -1,7 +1,5 @@
 .. image:: https://travis-ci.org/PFLeget/treegp.svg?branch=master
     :target: https://travis-ci.org/PFLeget/treegp
-.. image:: https://coveralls.io/repos/github/PFLeget/treegp/badge.svg?branch=master
-    :target: https://coveralls.io/github/PFLeget/treegp?branch=master
 .. image:: https://img.shields.io/badge/astro--ph.IM-2103.09881-red
     :target: https://arxiv.org/abs/2103.09881
 
