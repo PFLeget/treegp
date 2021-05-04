@@ -135,9 +135,9 @@ class robust_2dfit(object):
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self.m = Minuit.from_array_func(self.chi2, p0, print_level=0)
+            self.m = Minuit(self.chi2, p0)
             self.m.migrad()
-        results = [self.m.values[key] for key in self.m.values.keys()]
+        results = [self.m.params[key].value for key in self.m.parameters]
         self._minuit_result = results
         self.result = [np.sqrt(self.alpha[0][0]), results[0],
                        results[1], results[2],
@@ -153,7 +153,7 @@ class robust_2dfit(object):
         """
         self._minimize_minuit(p0=p0)
 
-        if not self.m.migrad_ok():
+        if not self.m.accurate:
             N_restart = 3
             g1 = np.linspace(-0.3, 0.3, N_restart)
             size = np.linspace(p0[0] - p0[0]/10., 2*p0[0], N_restart)
@@ -167,7 +167,7 @@ class robust_2dfit(object):
                 new_p0 = [size[i], g1[i], g2[i]]
                 print(new_p0)
                 self._minimize_minuit(p0=new_p0)
-                if self.m.migrad_ok():
+                if self.m.accurate:
                     break
         pcf = self._model_skl(self.result[0], self.result[1], 
                               self.result[2], self.result[3])
