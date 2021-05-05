@@ -76,24 +76,23 @@ def test_hyperparameter_search_1d():
 
 @timer
 def test_hyperparameter_search_2d():
-    optimizer = ['log-likelihood', 'anisotropic']
-    npoints = [600, 2000]
+    optimizer = ['log-likelihood', 'anisotropic', 'anisotropic']
+    npoints = [600, 2000, 2000]
 
     noise = 0.01
     sigma = 2.
-    size = 0.5
+    size = [0.5, 0.5, 1.5]
     g1 = 0.2
     g2 = 0.2
-    ker = 'AnisotropicRBF'
-
-    # Generate 2D gaussian random fields.
-    L = get_correlation_length_matrix(size, g1, g2)
-    invL = np.linalg.inv(L)
-    kernel = "%f**2*%s"%((sigma, ker))
-    kernel += "(invLam={0!r})".format(invL)
-    kernel_skl = treegp.eval_kernel(kernel)
+    ker = ['AnisotropicRBF', 'AnisotropicRBF', 'AnisotropicVonKarman']
 
     for n, opt in enumerate(optimizer):
+        # Generate 2D gaussian random fields.
+        L = get_correlation_length_matrix(size[n], g1, g2)
+        invL = np.linalg.inv(L)
+        kernel = "%f**2*%s"%((sigma, ker[n]))
+        kernel += "(invLam={0!r})".format(invL)
+        kernel_skl = treegp.eval_kernel(kernel)
 
         x, y, y_err = make_2d_grf(kernel_skl,
                                   noise=noise,
@@ -133,10 +132,10 @@ def test_hyperparameter_search_2d():
         # link to the amplitudes of the fluctuation of the gaussian random fields.
 
         np.random.seed(42)
-        x1 = np.random.uniform(np.max(x)+6.*size,
-                               np.max(x)+6.*size, npoints[n])
-        x2 = np.random.uniform(np.max(x)+6.*size,
-                               np.max(x)+6.*size, npoints[n])
+        x1 = np.random.uniform(np.max(x)+6.*size[n],
+                               np.max(x)+6.*size[n], npoints[n])
+        x2 = np.random.uniform(np.max(x)+6.*size[n],
+                               np.max(x)+6.*size[n], npoints[n])
         new_x = np.array([x1, x2]).T
 
         y_predict, y_cov = gp.predict(new_x, return_cov=True)
