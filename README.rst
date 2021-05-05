@@ -1,5 +1,7 @@
 .. image:: https://travis-ci.org/PFLeget/treegp.svg?branch=master
     :target: https://travis-ci.org/PFLeget/treegp
+.. image:: https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/PFLeget/treegp
 .. image:: https://img.shields.io/badge/astro--ph.IM-2103.09881-red
     :target: https://arxiv.org/abs/2103.09881
 
