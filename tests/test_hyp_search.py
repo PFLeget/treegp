@@ -77,7 +77,7 @@ def test_hyperparameter_search_1d():
 @timer
 def test_hyperparameter_search_2d():
     optimizer = ['log-likelihood', 'anisotropic']
-    npoints = [400, 2000]
+    npoints = [500, 2000]
 
     noise = 0.01
     sigma = 2.
@@ -94,6 +94,7 @@ def test_hyperparameter_search_2d():
     kernel_skl = treegp.eval_kernel(kernel)
 
     for n, opt in enumerate(optimizer):
+
         x, y, y_err = make_2d_grf(kernel_skl,
                                   noise=noise,
                                   seed=42, npoints=npoints[n])

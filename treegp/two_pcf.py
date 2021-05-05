@@ -4,7 +4,7 @@ import treecorr
 import treegp
 from .kernels import eval_kernel
 from scipy import optimize
-from iminuit import Minuit
+import iminuit
 import sklearn
 import copy
 import warnings
@@ -135,13 +135,22 @@ class robust_2dfit(object):
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self.m = Minuit(self.chi2, p0)
-            self.m.migrad()
-        results = [self.m.params[key].value for key in self.m.parameters]
+            if int(iminuit.__version__[0])>=2:
+                self.m = iminuit.Minuit(self.chi2, p0)
+                self.m.migrad()
+                results = [self.m.params[key].value for key in self.m.parameters]
+                self._fit_ok = self.m.accurate
+            else:
+                self.m = iminuit.Minuit.from_array_func(self.chi2, p0, print_level=0)
+                self.m.migrad()
+                results = [self.m.values[key] for key in self.m.values.keys()]
+                self._fit_ok = self.m.migrad_ok()
+
         self._minuit_result = results
         self.result = [np.sqrt(self.alpha[0][0]), results[0],
                        results[1], results[2],
                        self.alpha[1][0]]
+
 
     def minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
         """
@@ -153,7 +162,7 @@ class robust_2dfit(object):
         """
         self._minimize_minuit(p0=p0)
 
-        if not self.m.accurate:
+        if not self._fit_ok:
             N_restart = 3
             g1 = np.linspace(-0.3, 0.3, N_restart)
             size = np.linspace(p0[0] - p0[0]/10., 2*p0[0], N_restart)
@@ -167,7 +176,7 @@ class robust_2dfit(object):
                 new_p0 = [size[i], g1[i], g2[i]]
                 print(new_p0)
                 self._minimize_minuit(p0=new_p0)
-                if self.m.accurate:
+                if self._fit_ok:
                     break
         pcf = self._model_skl(self.result[0], self.result[1], 
                               self.result[2], self.result[3])
@@ -259,7 +268,10 @@ class two_pcf(object):
 
             mask = mask.reshape(npixels)
 
-            distance = np.array([kk.dx.reshape(npixels), kk.dy.reshape(npixels)]).T
+            dy = (kk.bottom_edges + kk.top_edges) / 2.
+            dx = dy.T
+
+            distance = np.array([dx.reshape(npixels), dy.reshape(npixels)]).T
             Coord = distance
             xi = kk.xi.reshape(npixels)
         else:
