@@ -40,9 +40,9 @@ packages = find_packages()
 scripts = glob.glob("scripts/*.py")
 
 # Dependencies
-dependencies = ['numpy', 'scipy', 'treecorr>=4.0', 'fitsio>=0.9.12', 'scikit-learn>=0.18']
+dependencies = ['numpy', 'scipy', 'treecorr>=4.2', 'fitsio>=0.9.12', 'scikit-learn>=0.18']
 if sys.version >= '3.0':
-    dependencies += ['iminuit<2']
+    dependencies += ['iminuit>2']
 else:
     # iminuit 1.4 fails on python 2.7
     dependencies += ['iminuit>=1.3,<1.4']
