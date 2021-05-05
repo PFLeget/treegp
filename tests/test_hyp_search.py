@@ -77,7 +77,7 @@ def test_hyperparameter_search_1d():
 @timer
 def test_hyperparameter_search_2d():
     optimizer = ['log-likelihood', 'anisotropic']
-    npoints = [500, 2000]
+    npoints = [600, 2000]
 
     noise = 0.01
     sigma = 2.
