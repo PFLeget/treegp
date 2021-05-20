@@ -2,6 +2,8 @@
     :target: https://travis-ci.org/PFLeget/treegp
 .. image:: https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg
   :target: https://codecov.io/gh/PFLeget/treegp
+.. image:: https://readthedocs.org/projects/treegp/badge/?version=latest
+  :target: https://treegp.readthedocs.io/en/latest/?badge=latest
 .. image:: https://img.shields.io/badge/astro--ph.IM-2103.09881-red
     :target: https://arxiv.org/abs/2103.09881
 
