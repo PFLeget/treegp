@@ -95,12 +95,15 @@ class robust_2dfit(object):
         :param corr_length:   Correlation lenght of the kernel.
         :param g1, g2:        Shear applied to isotropic kernel.
         """
-        L = get_correlation_length_matrix(corr_length, g1, g2)
-        invLam = np.linalg.inv(L)
-        kernel_used = sigma**2 * self.kernel_class(invLam=invLam)
-        pcf = kernel_used.__call__(self.coord,Y=np.zeros_like(self.coord))[:,0]
-        self.kernel_fit = kernel_used
-        return pcf
+        if abs(g1)>1 or abs(g2)>1:
+            return None
+        else:
+            L = get_correlation_length_matrix(corr_length, g1, g2)
+            invLam = np.linalg.inv(L)
+            kernel_used = sigma**2 * self.kernel_class(invLam=invLam)
+            pcf = kernel_used.__call__(self.coord,Y=np.zeros_like(self.coord))[:,0]
+            self.kernel_fit = kernel_used
+            return pcf
 
     def chi2(self, param):
         """
@@ -117,14 +120,18 @@ class robust_2dfit(object):
         """
         model = self._model_skl(1., param[0],
                                 param[1], param[2])
-        model = model[self.mask]
-        F = np.array([model, np.ones_like(model)]).T
-        FWF = np.dot(F.T, self.W).dot(F)
-        Y = self.flat_data[self.mask].reshape((len(model), 1))
-        self.alpha = np.linalg.inv(FWF).dot(np.dot(F.T, self.W).dot(Y))
-        self.alpha[0] = abs(self.alpha[0])
-        self.residuals = self.flat_data[self.mask] - ((self.alpha[0] * model) + self.alpha[1])
-        self.chi2_value = self.residuals.dot(self.W).dot(self.residuals.reshape((len(model), 1)))
+        if model is None:
+            self.chi2_value = np.inf
+        else:
+            model = model[self.mask]
+            F = np.array([model, np.ones_like(model)]).T
+            FWF = np.dot(F.T, self.W).dot(F)
+            Y = self.flat_data[self.mask].reshape((len(model), 1))
+            self.alpha = np.linalg.inv(FWF).dot(np.dot(F.T, self.W).dot(Y))
+            self.alpha[0] = abs(self.alpha[0])
+            self.residuals = self.flat_data[self.mask] - ((self.alpha[0] * model) + self.alpha[1])
+            self.chi2_value = self.residuals.dot(self.W).dot(self.residuals.reshape((len(model), 1)))
+
         return self.chi2_value
 
     def _minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
