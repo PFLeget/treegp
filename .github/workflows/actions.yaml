@@ -12,16 +12,29 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+
+      - name: Setup environment
         run: |
           sudo apt-get install -y libffi-dev
+          export PYTHONPATH=$HOME/lib/python${{ matrix.python-version }}/site-packages/:$PYTHONPATH
+          mkdir $HOME/lib
+          mkdir $HOME/lib/python${{ matrix.python-version }}
+          mkdir $HOME/lib/python${{ matrix.python-version }}/site-packages
+
+      - name: Install dependencies
           python -m pip install --upgrade pip
           pip install codecov pytest-cov
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Install treegp
+        run: |
+          - python setup.py install --prefix=$HOME
+
       - name: Test with pytest and submit to codecov
         run: |
           cd tests
