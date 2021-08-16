@@ -1,4 +1,4 @@
-.. image:: https://github.com/PFLeget/.github/workflows/actions/CI/badge.svg?branch=master&event=push)
+.. image:: https://github.com/PFLeget/.github/workflows/actions/CI/badge.svg?branch=master&event=push
 .. image:: https://travis-ci.org/PFLeget/treegp.svg?branch=master
     :target: https://travis-ci.org/PFLeget/treegp
 .. image:: https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg
