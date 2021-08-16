@@ -8,6 +8,7 @@ python:
     - 3.6
     - 3.7
     - 3.8
+    - 3.9
 
 compiler:
     - g++
@@ -26,12 +27,12 @@ cache:
 
 install:
     - pip install -r requirements.txt
-    - pip install nose codecov
+    - pip install pytest-codecov
 
 script:
     - python setup.py install --prefix=$HOME
     - cd tests
-    - nosetests --with-coverage --cover-package=treegp
+    - pytest --codecov
 
 after_success:
     - codecov
