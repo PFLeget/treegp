@@ -30,7 +30,7 @@ jobs:
 
       - name: Install treegp
         run: |
-          - python setup.py install --prefix=$HOME
+          - python setup.py install
 
       - name: Test with pytest and submit to codecov
         run: |
