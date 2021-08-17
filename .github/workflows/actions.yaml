@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install coverage pytest-codecov
+          pip install pytest-codecov
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Install treegp
@@ -35,7 +35,4 @@ jobs:
       - name: Test with pytest and submit to codecov
         run: |
           cd tests
-          pytest --codecov --cov-report=
-      - name: Report coverage
-        run: |
-          coverage report
+          pytest --codecov
