@@ -35,7 +35,7 @@ jobs:
       - name: Test with pytest and submit to codecov
         run: |
           cd tests
-          pytest --codecov
+          pytest --codecov --cov-report=
       - name: Report coverage
         run: |
           coverage report
