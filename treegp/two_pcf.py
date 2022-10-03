@@ -344,6 +344,7 @@ class two_pcf(object):
 
         :param kernel: sklearn.gaussian_process kernel.
         """
+        print('start optimizer')
         size_x = np.max(self.X[:,0]) - np.min(self.X[:,0])
         if self.ndim == 2:
             size_y = np.max(self.X[:,1]) - np.min(self.X[:,1])
@@ -351,6 +352,7 @@ class two_pcf(object):
         if self.ndim == 1:
             size_y = 0.
             rho = float(len(self.X[:,0])) / size_x
+        print('rho = ',rho)
         # if min_sep is None and isotropic GP, set min_sep to the average separation
         # between data.
         if self.min_sep is not None:
@@ -360,17 +362,20 @@ class two_pcf(object):
                 min_sep = 0.
             else:
                 min_sep = np.sqrt(1./rho)
+        print('min_sep = ',min_sep)
         # if max_sep is None, set max_sep to half of the size of the 
         # given field.
         if self.max_sep is not None:
             max_sep = self.max_sep
         else:
             max_sep = np.sqrt(size_x**2 + size_y**2)/2.
+        print('max_sep = ',min_sep)
 
         self.min_sep = min_sep
         self.max_sep = max_sep
 
         xi, xi_weight, distance, coord, mask = self.return_2pcf()
+        print('xi = ',xi)
 
         def PCF(param, k=kernel):
             kernel = k.clone_with_theta(param)
@@ -378,10 +383,12 @@ class two_pcf(object):
             return pcf
 
         xi_mask = xi[mask]
+        print('xi_mask = ',xi_mask)
         def chi2(param):
             residual = xi_mask - PCF(param)[mask]
             return residual.dot(xi_weight.dot(residual))
 
+        print('robust_fit? ',self.robust_fit)
         if self.robust_fit:
             robust = robust_2dfit(kernel, xi,
                                   coord[:,0], coord[:,1], 
@@ -390,6 +397,7 @@ class two_pcf(object):
             kernel = copy.deepcopy(robust.kernel_fit)
             cst = robust.result[-1]
             self._results_robust = robust.result
+            print('results_robust  ',robust.result)
         else:
             p0 = kernel.theta
             results_fmin = optimize.fmin(chi2,p0,disp=False)
@@ -400,6 +408,7 @@ class two_pcf(object):
             results = results[ind_min]
             kernel = kernel.clone_with_theta(results)
             cst = 0
+            print('results  ',results)
 
         self._2pcf = xi
         self._2pcf_weight = xi_weight
@@ -407,4 +416,5 @@ class two_pcf(object):
         self._2pcf_fit = PCF(kernel.theta) + cst
         self._2pcf_mask = mask
         self._kernel = copy.deepcopy(kernel)
+        print('done making kernel')
         return kernel
