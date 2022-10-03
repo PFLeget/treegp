@@ -264,9 +264,9 @@ class two_pcf(object):
             print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins,
                                         bin_type='TwoD', bin_slop=0)
-            #print("made kk")
+            print("made kk")
             kk.process(cat)
-            #print("done process")
+            print("done process")
             #print("kk.xi = ",kk.xi)
             # Need a mask in the case of the 2D correlation function, to compute
             # the covariance matrix using the bootstrap. The 2D correlation
@@ -293,7 +293,7 @@ class two_pcf(object):
             #print("distance = ",distance)
             Coord = distance
             xi = kk.xi.reshape(npixels)
-            #print("xi = ",xi)
+            print("xi = ",xi)
         else:
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
             print("KK: ",self.min_sep,self.max_sep,self.nbins)
@@ -303,6 +303,7 @@ class two_pcf(object):
             mask = np.ones_like(kk.xi, dtype=bool)
             Coord = np.array([distance,np.zeros_like(distance)]).T
             xi = kk.xi
+            print("xi = ",xi)
 
         return xi, distance, Coord, mask
 
@@ -354,6 +355,7 @@ class two_pcf(object):
         else:
             # let like developed initialy for the moment
             xi_weight = np.eye(len(xi)) * 1./np.var(self.y)
+        print('done return_2pcf')
         return xi, xi_weight, distance, coord, mask
 
     def optimizer(self, kernel):
