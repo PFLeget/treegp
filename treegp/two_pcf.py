@@ -248,22 +248,29 @@ class two_pcf(object):
         :param y:  Values of the field. (n_samples)
         :param y_err: Error of y. (n_samples)
         """
+        print("start comp_2pcf")
         if np.sum(y_err) == 0:
             w = None
         else:
             w = 1./y_err**2
 
         if self.anisotropic:
+            print("anisotropic")
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
+            print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins,
                                         bin_type='TwoD', bin_slop=0)
+            print("made kk")
             kk.process(cat)
+            print("done process")
+            print("kk.xi = ",kk.xi)
             # Need a mask in the case of the 2D correlation function, to compute
             # the covariance matrix using the bootstrap. The 2D correlation
             # function is symmetric, so just half of the correlation function
             # is useful to compute the covariance matrix. If it is not done,
             # the covariance matrix is consequently not positive definite.
             npixels = len(kk.xi)**2
+            print("npixels = ",npixels)
             mask = np.ones_like(kk.xi, dtype=bool)
             mask = mask.reshape((int(np.sqrt(npixels)), int(np.sqrt(npixels))))
 
@@ -279,10 +286,13 @@ class two_pcf(object):
             dx = dy.T
 
             distance = np.array([dx.reshape(npixels), dy.reshape(npixels)]).T
+            print("distance = ",distance)
             Coord = distance
             xi = kk.xi.reshape(npixels)
+            print("xi = ",xi)
         else:
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
+            print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins)
             kk.process(cat)
             distance = kk.meanr
