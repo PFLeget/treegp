@@ -140,6 +140,7 @@ class robust_2dfit(object):
 
         :param p0: List of starting points.
         """
+        print('start minimize_minuit')
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if int(iminuit.__version__[0])>=2:
@@ -152,11 +153,13 @@ class robust_2dfit(object):
                 self.m.migrad()
                 results = [self.m.values[key] for key in self.m.values.keys()]
                 self._fit_ok = self.m.migrad_ok()
+        print('results = ',results)
 
         self._minuit_result = results
         self.result = [np.sqrt(self.alpha[0][0]), results[0],
                        results[1], results[2],
                        self.alpha[1][0]]
+        print('done minimize_minuit')
 
 
     def minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
@@ -187,6 +190,7 @@ class robust_2dfit(object):
                     break
         pcf = self._model_skl(self.result[0], self.result[1], 
                               self.result[2], self.result[3])
+        print('pcf = ',pcf)
 
 class two_pcf(object):
     """
@@ -408,8 +412,11 @@ class two_pcf(object):
             robust = robust_2dfit(kernel, xi,
                                   coord[:,0], coord[:,1], 
                                   xi_weight, mask=mask)
+            print('made robust')
             robust.minimize_minuit(p0=self.p0_robust_fit)
+            print('after minimize_minuit')
             kernel = copy.deepcopy(robust.kernel_fit)
+            print('after copy kernel')
             cst = robust.result[-1]
             self._results_robust = robust.result
             print('results_robust  ',robust.result)
