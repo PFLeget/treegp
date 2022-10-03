@@ -264,17 +264,17 @@ class two_pcf(object):
             print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins,
                                         bin_type='TwoD', bin_slop=0)
-            print("made kk")
+            #print("made kk")
             kk.process(cat)
-            print("done process")
-            print("kk.xi = ",kk.xi)
+            #print("done process")
+            #print("kk.xi = ",kk.xi)
             # Need a mask in the case of the 2D correlation function, to compute
             # the covariance matrix using the bootstrap. The 2D correlation
             # function is symmetric, so just half of the correlation function
             # is useful to compute the covariance matrix. If it is not done,
             # the covariance matrix is consequently not positive definite.
             npixels = len(kk.xi)**2
-            print("npixels = ",npixels)
+            #print("npixels = ",npixels)
             mask = np.ones_like(kk.xi, dtype=bool)
             mask = mask.reshape((int(np.sqrt(npixels)), int(np.sqrt(npixels))))
 
@@ -290,10 +290,10 @@ class two_pcf(object):
             dx = dy.T
 
             distance = np.array([dx.reshape(npixels), dy.reshape(npixels)]).T
-            print("distance = ",distance)
+            #print("distance = ",distance)
             Coord = distance
             xi = kk.xi.reshape(npixels)
-            print("xi = ",xi)
+            #print("xi = ",xi)
         else:
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
             print("KK: ",self.min_sep,self.max_sep,self.nbins)
@@ -335,7 +335,7 @@ class two_pcf(object):
         """
         print('start return_2pcf')
         xi, distance, coord, mask = self.comp_2pcf(self.X, self.y, self.y_err)
-        print('xi = ',xi)
+        #print('xi = ',xi)
         if self.anisotropic:
             # Choice done from Andy Taylor et al. 2012
             # see https://doi.org/10.1093/mnras/stt270
@@ -345,12 +345,12 @@ class two_pcf(object):
                 bottom = x - npixel - 2.
                 return (top/bottom) - 2.
             results = optimize.fsolve(f_bias, len(xi[mask]) + 10)
-            print('results = ',results)
+            #print('results = ',results)
             xi_cov = self.comp_xi_covariance(n_bootstrap=int(results[0]), mask=mask, seed=seed)
-            print('xi_cov = ',xi_cov)
+            #print('xi_cov = ',xi_cov)
             bias_factor = (int(results[0]) - 1.) / (int(results[0]) - len(xi[mask]) - 2.)
             xi_weight = np.linalg.inv(xi_cov) * bias_factor
-            print('xi_wt = ',xi_weight)
+            #print('xi_wt = ',xi_weight)
         else:
             # let like developed initialy for the moment
             xi_weight = np.eye(len(xi)) * 1./np.var(self.y)
