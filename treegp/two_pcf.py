@@ -319,7 +319,9 @@ class two_pcf(object):
 
         :param seed: seed of the random generator.
         """
+        print('start return_2pcf')
         xi, distance, coord, mask = self.comp_2pcf(self.X, self.y, self.y_err)
+        print('xi = ',xi)
         if self.anisotropic:
             # Choice done from Andy Taylor et al. 2012
             # see https://doi.org/10.1093/mnras/stt270
@@ -329,9 +331,12 @@ class two_pcf(object):
                 bottom = x - npixel - 2.
                 return (top/bottom) - 2.
             results = optimize.fsolve(f_bias, len(xi[mask]) + 10)
+            print('results = ',results)
             xi_cov = self.comp_xi_covariance(n_bootstrap=int(results[0]), mask=mask, seed=seed)
+            print('xi_cov = ',xi_cov)
             bias_factor = (int(results[0]) - 1.) / (int(results[0]) - len(xi[mask]) - 2.)
             xi_weight = np.linalg.inv(xi_cov) * bias_factor
+            print('xi_wt = ',xi_weight)
         else:
             # let like developed initialy for the moment
             xi_weight = np.eye(len(xi)) * 1./np.var(self.y)
