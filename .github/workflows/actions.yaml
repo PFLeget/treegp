@@ -8,7 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.7, 3.8, 3.9]
+        python-version: [3.7, 3.8, 3.9, 3.10]
+
+        include:
+          - os: macos-latest
+            python-version: 3.9
 
     steps:
       - uses: actions/checkout@v2
@@ -18,9 +22,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Setup environment
+      - name: Setup environment - linux
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get install -y libffi-dev
+
+      - name: Setup environment - macos
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install libffi
 
       - name: Install dependencies
         run: |
