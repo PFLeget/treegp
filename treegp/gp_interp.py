@@ -99,22 +99,30 @@ class GPInterpolation(object):
         :param y:  Values of the field.  (n_samples)
         :param y_err: Error of y. (n_samples)
         """
+        print('start _fit')
+        print('optimizer = ',self.optimizer)
         if self.optimizer != "none":
             # Hyperparameters estimation using 2-point correlation
             # function information.
             if self.optimizer in ['two-pcf', 'anisotropic']:
                 anisotropic = self.optimizer == 'anisotropic'
+                print('before two_pcf')
                 self._optimizer = treegp.two_pcf(X, y, y_err,
                                                  self.min_sep, self.max_sep,
                                                  nbins=self.nbins,
                                                  anisotropic=anisotropic,
                                                  robust_fit=self.robust_fit,
                                                  p0=self.p0_robust_fit)
+                print('after two_pcf')
                 kernel = self._optimizer.optimizer(kernel)
+                print('made kernel')
             # Hyperparameters estimation using maximum likelihood fit.
             if self.optimizer == 'log-likelihood':
+                print('before log_like')
                 self._optimizer = treegp.log_likelihood(X, y, y_err)
+                print('after log_like')
                 kernel = self._optimizer.optimizer(kernel)
+                print('made kernel')
         return kernel
 
     def predict(self, X, return_cov=False):
@@ -210,11 +218,15 @@ class GPInterpolation(object):
         Solve for hyperparameters if requested using 2-point correlation
         function method or maximum likelihood.
         """
+        print('start solve')
         self._init_theta = []
         kernel = copy.deepcopy(self.kernel)
+        print('copied kernel')
         self._init_theta.append(kernel.theta)
+        print('added to init_theta')
         self.kernel = self._fit(self.kernel, self._X, 
                                 self._y-self._mean-self._spatial_average, self._y_err)
+        print('done solve')
 
     def return_2pcf(self):
         """
