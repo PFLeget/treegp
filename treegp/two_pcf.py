@@ -263,7 +263,7 @@ class two_pcf(object):
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
             print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins,
-                                        bin_type='TwoD', bin_slop=0)
+                                        bin_type='TwoD', bin_slop=0, verbose=3)
             print("made kk")
             kk.process(cat)
             print("done process")
