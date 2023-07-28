@@ -20,9 +20,9 @@ def get_correlation_length_matrix(size, e1, e2):
     :param size:   Correlation lenght of the kernel.
     :param e1, e2: Shear applied to isotropic kernel.
     """
-    if abs(e1)>1 or abs(e2)>1:
-        raise ValueError('abs value of e1 and e2 must be lower than one')
     e = np.sqrt(e1**2 + e2**2)
+    if e>1:
+        raise ValueError('magnitude of e must be lower than one')
     q = (1-e) / (1+e)
     phi = 0.5 * np.arctan2(e2,e1)
     rot = np.array([[np.cos(phi), np.sin(phi)],
@@ -92,15 +92,15 @@ class robust_2dfit(object):
         from sklearn kernel.
 
         :param sigma:         Standard deviation of the gaussian random field.
-        :param corr_length:   Correlation lenght of the kernel.
+        :param corr_length:   Correlation length of the kernel.
         :param g1, g2:        Shear applied to isotropic kernel.
         """
-        if abs(g1)>1 or abs(g2)>1:
+        if (g1**2 + g2**2)>1:
             return None
         else:
             L = get_correlation_length_matrix(corr_length, g1, g2)
             invLam = np.linalg.inv(L)
-            kernel_used = sigma**2 * self.kernel_class(invLam=invLam)
+            kernel_used = sklearn.gaussian_process.kernels.ConstantKernel(sigma**2,constant_value_bounds = "fixed") * self.kernel_class(invLam=invLam)
             pcf = kernel_used.__call__(self.coord,Y=np.zeros_like(self.coord))[:,0]
             self.kernel_fit = kernel_used
             return pcf
@@ -140,7 +140,6 @@ class robust_2dfit(object):
 
         :param p0: List of starting points.
         """
-        print('start minimize_minuit')
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if int(iminuit.__version__[0])>=2:
@@ -153,13 +152,11 @@ class robust_2dfit(object):
                 self.m.migrad()
                 results = [self.m.values[key] for key in self.m.values.keys()]
                 self._fit_ok = self.m.migrad_ok()
-        print('results = ',results)
 
         self._minuit_result = results
         self.result = [np.sqrt(self.alpha[0][0]), results[0],
                        results[1], results[2],
                        self.alpha[1][0]]
-        print('done minimize_minuit')
 
 
     def minimize_minuit(self, p0 = [3000., 0.2, 0.2]):
@@ -190,11 +187,10 @@ class robust_2dfit(object):
                     break
         pcf = self._model_skl(self.result[0], self.result[1], 
                               self.result[2], self.result[3])
-        print('pcf = ',pcf)
 
 class two_pcf(object):
     """
-    Fit statistical uncertaintie on two-point correlation function using bootstraping.
+    Fit statistical uncertainty on two-point correlation function using bootstraping.
 
     :param X:           Coordinates of the field.  (n_samples, 1 or 2)
     :param y:           Values of the field. (n_samples)
@@ -252,29 +248,22 @@ class two_pcf(object):
         :param y:  Values of the field. (n_samples)
         :param y_err: Error of y. (n_samples)
         """
-        print("start comp_2pcf")
         if np.sum(y_err) == 0:
             w = None
         else:
             w = 1./y_err**2
 
         if self.anisotropic:
-            print("anisotropic")
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
-            print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins,
-                                        bin_type='TwoD', bin_slop=0, verbose=3)
-            print("made kk")
+                                        bin_type='TwoD', bin_slop=0)
             kk.process(cat)
-            print("done process")
-            #print("kk.xi = ",kk.xi)
             # Need a mask in the case of the 2D correlation function, to compute
             # the covariance matrix using the bootstrap. The 2D correlation
             # function is symmetric, so just half of the correlation function
             # is useful to compute the covariance matrix. If it is not done,
             # the covariance matrix is consequently not positive definite.
             npixels = len(kk.xi)**2
-            #print("npixels = ",npixels)
             mask = np.ones_like(kk.xi, dtype=bool)
             mask = mask.reshape((int(np.sqrt(npixels)), int(np.sqrt(npixels))))
 
@@ -290,20 +279,16 @@ class two_pcf(object):
             dx = dy.T
 
             distance = np.array([dx.reshape(npixels), dy.reshape(npixels)]).T
-            #print("distance = ",distance)
             Coord = distance
             xi = kk.xi.reshape(npixels)
-            print("xi = ",xi)
         else:
             cat = treecorr.Catalog(x=X[:,0], y=X[:,1], k=(y-np.mean(y)), w=w)
-            print("KK: ",self.min_sep,self.max_sep,self.nbins)
             kk = treecorr.KKCorrelation(min_sep=self.min_sep, max_sep=self.max_sep, nbins=self.nbins)
             kk.process(cat)
             distance = kk.meanr
             mask = np.ones_like(kk.xi, dtype=bool)
             Coord = np.array([distance,np.zeros_like(distance)]).T
             xi = kk.xi
-            print("xi = ",xi)
 
         return xi, distance, Coord, mask
 
@@ -334,9 +319,7 @@ class two_pcf(object):
 
         :param seed: seed of the random generator.
         """
-        print('start return_2pcf')
         xi, distance, coord, mask = self.comp_2pcf(self.X, self.y, self.y_err)
-        #print('xi = ',xi)
         if self.anisotropic:
             # Choice done from Andy Taylor et al. 2012
             # see https://doi.org/10.1093/mnras/stt270
@@ -346,16 +329,12 @@ class two_pcf(object):
                 bottom = x - npixel - 2.
                 return (top/bottom) - 2.
             results = optimize.fsolve(f_bias, len(xi[mask]) + 10)
-            #print('results = ',results)
             xi_cov = self.comp_xi_covariance(n_bootstrap=int(results[0]), mask=mask, seed=seed)
-            #print('xi_cov = ',xi_cov)
             bias_factor = (int(results[0]) - 1.) / (int(results[0]) - len(xi[mask]) - 2.)
             xi_weight = np.linalg.inv(xi_cov) * bias_factor
-            #print('xi_wt = ',xi_weight)
         else:
             # let like developed initialy for the moment
             xi_weight = np.eye(len(xi)) * 1./np.var(self.y)
-        print('done return_2pcf')
         return xi, xi_weight, distance, coord, mask
 
     def optimizer(self, kernel):
@@ -365,7 +344,6 @@ class two_pcf(object):
 
         :param kernel: sklearn.gaussian_process kernel.
         """
-        print('start optimizer')
         size_x = np.max(self.X[:,0]) - np.min(self.X[:,0])
         if self.ndim == 2:
             size_y = np.max(self.X[:,1]) - np.min(self.X[:,1])
@@ -373,7 +351,6 @@ class two_pcf(object):
         if self.ndim == 1:
             size_y = 0.
             rho = float(len(self.X[:,0])) / size_x
-        print('rho = ',rho)
         # if min_sep is None and isotropic GP, set min_sep to the average separation
         # between data.
         if self.min_sep is not None:
@@ -383,20 +360,17 @@ class two_pcf(object):
                 min_sep = 0.
             else:
                 min_sep = np.sqrt(1./rho)
-        print('min_sep = ',min_sep)
         # if max_sep is None, set max_sep to half of the size of the 
         # given field.
         if self.max_sep is not None:
             max_sep = self.max_sep
         else:
             max_sep = np.sqrt(size_x**2 + size_y**2)/2.
-        print('max_sep = ',min_sep)
 
         self.min_sep = min_sep
         self.max_sep = max_sep
 
         xi, xi_weight, distance, coord, mask = self.return_2pcf()
-        print('xi = ',xi)
 
         def PCF(param, k=kernel):
             kernel = k.clone_with_theta(param)
@@ -404,24 +378,18 @@ class two_pcf(object):
             return pcf
 
         xi_mask = xi[mask]
-        print('xi_mask = ',xi_mask)
         def chi2(param):
             residual = xi_mask - PCF(param)[mask]
             return residual.dot(xi_weight.dot(residual))
 
-        print('robust_fit? ',self.robust_fit)
         if self.robust_fit:
             robust = robust_2dfit(kernel, xi,
                                   coord[:,0], coord[:,1], 
                                   xi_weight, mask=mask)
-            print('made robust')
             robust.minimize_minuit(p0=self.p0_robust_fit)
-            print('after minimize_minuit')
             kernel = copy.deepcopy(robust.kernel_fit)
-            print('after copy kernel')
             cst = robust.result[-1]
             self._results_robust = robust.result
-            print('results_robust  ',robust.result)
         else:
             p0 = kernel.theta
             results_fmin = optimize.fmin(chi2,p0,disp=False)
@@ -432,7 +400,6 @@ class two_pcf(object):
             results = results[ind_min]
             kernel = kernel.clone_with_theta(results)
             cst = 0
-            print('results  ',results)
 
         self._2pcf = xi
         self._2pcf_weight = xi_weight
@@ -440,5 +407,4 @@ class two_pcf(object):
         self._2pcf_fit = PCF(kernel.theta) + cst
         self._2pcf_mask = mask
         self._kernel = copy.deepcopy(kernel)
-        print('done making kernel')
         return kernel
