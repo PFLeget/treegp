@@ -20,9 +20,9 @@ def get_correlation_length_matrix(size, e1, e2):
     :param size:   Correlation lenght of the kernel.
     :param e1, e2: Shear applied to isotropic kernel.
     """
-    if abs(e1)>1 or abs(e2)>1:
-        raise ValueError('abs value of e1 and e2 must be lower than one')
     e = np.sqrt(e1**2 + e2**2)
+    if e>1:
+        raise ValueError('magnitude of e must be lower than one')
     q = (1-e) / (1+e)
     phi = 0.5 * np.arctan2(e2,e1)
     rot = np.array([[np.cos(phi), np.sin(phi)],
@@ -92,15 +92,15 @@ class robust_2dfit(object):
         from sklearn kernel.
 
         :param sigma:         Standard deviation of the gaussian random field.
-        :param corr_length:   Correlation lenght of the kernel.
+        :param corr_length:   Correlation length of the kernel.
         :param g1, g2:        Shear applied to isotropic kernel.
         """
-        if abs(g1)>1 or abs(g2)>1:
+        if (g1**2 + g2**2)>1:
             return None
         else:
             L = get_correlation_length_matrix(corr_length, g1, g2)
             invLam = np.linalg.inv(L)
-            kernel_used = sigma**2 * self.kernel_class(invLam=invLam)
+            kernel_used = sklearn.gaussian_process.kernels.ConstantKernel(sigma**2,constant_value_bounds = "fixed") * self.kernel_class(invLam=invLam)
             pcf = kernel_used.__call__(self.coord,Y=np.zeros_like(self.coord))[:,0]
             self.kernel_fit = kernel_used
             return pcf
@@ -190,7 +190,7 @@ class robust_2dfit(object):
 
 class two_pcf(object):
     """
-    Fit statistical uncertaintie on two-point correlation function using bootstraping.
+    Fit statistical uncertainty on two-point correlation function using bootstraping.
 
     :param X:           Coordinates of the field.  (n_samples, 1 or 2)
     :param y:           Values of the field. (n_samples)
