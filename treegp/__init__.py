@@ -17,4 +17,3 @@ from .kernels import AnisotropicVonKarman
 from .kernels import eval_kernel
 
 from .meanify import meanify
-

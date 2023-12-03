@@ -4,16 +4,20 @@
 
 import numpy as np
 from scipy.spatial.distance import cdist
-from sklearn.gaussian_process.kernels import StationaryKernelMixin, NormalizedKernelMixin, Kernel
+from sklearn.gaussian_process.kernels import (
+    StationaryKernelMixin,
+    NormalizedKernelMixin,
+    Kernel,
+)
 from sklearn.gaussian_process.kernels import Hyperparameter
 from sklearn.gaussian_process.kernels import _check_length_scale
 
 
 def eval_kernel(kernel):
     """
-    Some import trickery to get all subclasses 
+    Some import trickery to get all subclasses
     of sklearn.gaussian_process.kernels.Kernel
-    into the local namespace without doing 
+    into the local namespace without doing
     "from sklearn.gaussian_process.kernels import *"
     and without importing them all manually.
 
@@ -21,12 +25,14 @@ def eval_kernel(kernel):
     kernel = eval_kernel("RBF(1)") instead of
     kernel = sklearn.gaussian_process.kernels.RBF(1)
     """
+
     def recurse_subclasses(cls):
         out = []
         for c in cls.__subclasses__():
             out.append(c)
             out.extend(recurse_subclasses(c))
         return out
+
     clses = recurse_subclasses(Kernel)
     for cls in clses:
         module = __import__(cls.__module__, globals(), locals(), cls)
@@ -40,15 +46,18 @@ def eval_kernel(kernel):
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:  # pragma: no cover
-        raise RuntimeError("Failed to evaluate kernel string {0!r}.  "
-                           "Original exception: {1}".format(kernel, e))
+        raise RuntimeError(
+            "Failed to evaluate kernel string {0!r}.  "
+            "Original exception: {1}".format(kernel, e)
+        )
 
     if isinstance(k.theta, property):
         raise TypeError("String provided was not initialized properly")
     return k
 
+
 class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
-    """ A GaussianProcessRegressor Kernel representing a radial basis function (essentially a
+    """A GaussianProcessRegressor Kernel representing a radial basis function (essentially a
     squared exponential or Gaussian) but with arbitrary anisotropic covariance.
     While the parameter for this kernel, an inverse covariance matrix, can be specified directly
     with the `invLam` kwarg, it may be more convenient to instead specify a characteristic
@@ -79,14 +88,17 @@ class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
                      theta element, or an [ntheta, 2] array indicating bounds on each of ntheta
                      elements.
     """
-    def __init__(self, invLam=None, scale_length=None, bounds=(-5,5)):
+
+    def __init__(self, invLam=None, scale_length=None, bounds=(-5, 5)):
         if scale_length is not None:
             if invLam is not None:
-                raise TypeError("Cannot set both invLam and scale_length in AnisotropicRBF.")
-            invLam = np.diag(1./np.array(scale_length)**2)
+                raise TypeError(
+                    "Cannot set both invLam and scale_length in AnisotropicRBF."
+                )
+            invLam = np.diag(1.0 / np.array(scale_length) ** 2)
 
         self.ndim = invLam.shape[0]
-        self.ntheta = self.ndim*(self.ndim+1)//2
+        self.ntheta = self.ndim * (self.ndim + 1) // 2
         self._d = np.diag_indices(self.ndim)
         self._t = np.tril_indices(self.ndim, -1)
         self.set_params(invLam)
@@ -98,18 +110,18 @@ class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
 
     def __call__(self, X, Y=None, eval_gradient=False):
         from scipy.spatial.distance import pdist, cdist, squareform
+
         X = np.atleast_2d(X)
 
         if Y is None:
-            dists = pdist(X, metric='mahalanobis', VI=self.invLam)
+            dists = pdist(X, metric="mahalanobis", VI=self.invLam)
             K = np.exp(-0.5 * dists**2)
             K = squareform(K)
             np.fill_diagonal(K, 1)
         else:
             if eval_gradient:
-                raise ValueError(
-                    "Gradient can only be evaluated when Y is None.")
-            dists = cdist(X, Y, metric='mahalanobis', VI=self.invLam)
+                raise ValueError("Gradient can only be evaluated when Y is None.")
+            dists = cdist(X, Y, metric="mahalanobis", VI=self.invLam)
             K = np.exp(-0.5 * dists**2)
 
         if eval_gradient:
@@ -123,11 +135,13 @@ class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
                 # L_ij if k indicates one of the theta parameters landing on the Cholesky diagonal,
                 # and is 1.0 if k indicates one of the thetas in the lower triangular region.
                 L_grad = np.zeros((self.ntheta, self.ndim, self.ndim), dtype=float)
-                L_grad[(np.arange(self.ndim),)+self._d] = self._L[self._d]
-                L_grad[(np.arange(self.ndim, self.ntheta),)+self._t] = 1.0
+                L_grad[(np.arange(self.ndim),) + self._d] = self._L[self._d]
+                L_grad[(np.arange(self.ndim, self.ntheta),) + self._t] = 1.0
 
                 half_invLam_grad = np.dot(L_grad, self._L.T)
-                invLam_grad = half_invLam_grad + np.transpose(half_invLam_grad, (0, 2, 1))
+                invLam_grad = half_invLam_grad + np.transpose(
+                    half_invLam_grad, (0, 2, 1)
+                )
 
                 dX = X[:, np.newaxis, :] - X[np.newaxis, :, :]
                 dist_grad = np.einsum("ijk,lkm,ijm->ijl", dX, invLam_grad, dX)
@@ -138,10 +152,12 @@ class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
 
     @property
     def hyperparameter_cholesky_factor(self):
-        return Hyperparameter("CholeskyFactor", "numeric", (1e-5, 1e5), int(self.ntheta))
+        return Hyperparameter(
+            "CholeskyFactor", "numeric", (1e-5, 1e5), int(self.ntheta)
+        )
 
     def get_params(self, deep=True):
-        return {"invLam":self.invLam}
+        return {"invLam": self.invLam}
 
     def set_params(self, invLam=None):
         if invLam is not None:
@@ -157,8 +173,8 @@ class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
     def theta(self, theta):
         self._theta = theta
         self._L = np.zeros_like(self.invLam)
-        self._L[np.diag_indices(self.ndim)] = np.exp(theta[:self.ndim])
-        self._L[np.tril_indices(self.ndim, -1)] = theta[self.ndim:]
+        self._L[np.diag_indices(self.ndim)] = np.exp(theta[: self.ndim])
+        self._L[np.tril_indices(self.ndim, -1)] = theta[self.ndim :]
         self.invLam = np.dot(self._L, self._L.T)
 
     def __repr__(self):
@@ -182,6 +198,7 @@ class VonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
     length_scale_bounds : pair of floats >= 0, default: (1e-5, 1e5)
         The lower and upper bound on length_scale
     """
+
     def __init__(self, length_scale=1.0, length_scale_bounds=(1e-5, 1e5)):
         self.length_scale = length_scale
         self.length_scale_bounds = length_scale_bounds
@@ -193,11 +210,13 @@ class VonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
     @property
     def hyperparameter_length_scale(self):
         if self.anisotropic:
-            return Hyperparameter("length_scale", "numeric",
-                                  self.length_scale_bounds,
-                                  len(self.length_scale))
-        return Hyperparameter(
-            "length_scale", "numeric", self.length_scale_bounds)
+            return Hyperparameter(
+                "length_scale",
+                "numeric",
+                self.length_scale_bounds,
+                len(self.length_scale),
+            )
+        return Hyperparameter("length_scale", "numeric", self.length_scale_bounds)
 
     def __call__(self, X, Y=None, eval_gradient=False):
         """Return the kernel k(X, Y) and optionally its gradient.
@@ -231,28 +250,29 @@ class VonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
         X = np.atleast_2d(X)
         length_scale = _check_length_scale(X, self.length_scale)
         if Y is None:
-            dists = pdist(X, metric='euclidean')
-            Filter = (dists != 0.)
+            dists = pdist(X, metric="euclidean")
+            Filter = dists != 0.0
             K = np.zeros_like(dists)
-            K[Filter] = ((dists[Filter]/length_scale)**(5./6.) *
-                         special.kv(5./6.,2*np.pi*dists[Filter]/length_scale))
+            K[Filter] = (dists[Filter] / length_scale) ** (5.0 / 6.0) * special.kv(
+                5.0 / 6.0, 2 * np.pi * dists[Filter] / length_scale
+            )
             K = squareform(K)
 
-            lim0 = special.gamma(5./6.) / (2 * (np.pi**(5./6.)))
+            lim0 = special.gamma(5.0 / 6.0) / (2 * (np.pi ** (5.0 / 6.0)))
             np.fill_diagonal(K, lim0)
             K /= lim0
         else:
             if eval_gradient:
-                raise ValueError(
-                    "Gradient can only be evaluated when Y is None.")
+                raise ValueError("Gradient can only be evaluated when Y is None.")
 
-            dists = cdist(X, Y, metric='euclidean')
-            Filter = (dists != 0.)
+            dists = cdist(X, Y, metric="euclidean")
+            Filter = dists != 0.0
             K = np.zeros_like(dists)
-            K[Filter] = ((dists[Filter]/length_scale)**(5./6.) *
-                       special.kv(5./6.,2*np.pi*dists[Filter]/length_scale))
-            lim0 = special.gamma(5./6.) / (2 * (np.pi**(5./6.)))
-            if np.sum(Filter) != len(K[0])*len(K[:,0]):
+            K[Filter] = (dists[Filter] / length_scale) ** (5.0 / 6.0) * special.kv(
+                5.0 / 6.0, 2 * np.pi * dists[Filter] / length_scale
+            )
+            lim0 = special.gamma(5.0 / 6.0) / (2 * (np.pi ** (5.0 / 6.0)))
+            if np.sum(Filter) != len(K[0]) * len(K[:, 0]):
                 K[~Filter] = lim0
             K /= lim0
 
@@ -265,21 +285,25 @@ class VonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
                 return K, K_gradient
             elif self.anisotropic:
                 raise ValueError(
-                    "Gradient can only be evaluated with isotropic VonKarman kernel for the moment.")
+                    "Gradient can only be evaluated with isotropic VonKarman kernel for the moment."
+                )
         else:
             return K
 
     def __repr__(self):
         if self.anisotropic:
             return "{0}(length_scale=[{1}])".format(
-                self.__class__.__name__, ", ".join(map("{0:.3g}".format,
-                                                   self.length_scale)))
+                self.__class__.__name__,
+                ", ".join(map("{0:.3g}".format, self.length_scale)),
+            )
         else:  # isotropic
             return "{0}(length_scale={1:.3g})".format(
-                self.__class__.__name__, np.ravel(self.length_scale)[0])
+                self.__class__.__name__, np.ravel(self.length_scale)[0]
+            )
+
 
 class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
-    """ A GaussianProcessRegressor Kernel representing a Von-Karman correlation function
+    """A GaussianProcessRegressor Kernel representing a Von-Karman correlation function
     with an arbitrary anisotropic covariance. While the parameter for this kernel,
     an inverse covariance matrix, can be specified directly with the `invLam` kwarg,
     it may be more convenient to instead specify a characteristic scale-length for each axis
@@ -309,14 +333,17 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
                      theta element, or an [ntheta, 2] array indicating bounds on each of ntheta
                      elements.
     """
-    def __init__(self, invLam=None, scale_length=None, bounds=(-5,5)):
+
+    def __init__(self, invLam=None, scale_length=None, bounds=(-5, 5)):
         if scale_length is not None:
             if invLam is not None:
-                raise TypeError("Cannot set both invLam and scale_length in AnisotropicVonKarman.")
-            invLam = np.diag(1./np.array(scale_length)**2)
+                raise TypeError(
+                    "Cannot set both invLam and scale_length in AnisotropicVonKarman."
+                )
+            invLam = np.diag(1.0 / np.array(scale_length) ** 2)
 
         self.ndim = invLam.shape[0]
-        self.ntheta = self.ndim*(self.ndim+1)//2
+        self.ntheta = self.ndim * (self.ndim + 1) // 2
         self._d = np.diag_indices(self.ndim)
         self._t = np.tril_indices(self.ndim, -1)
         self.set_params(invLam)
@@ -329,42 +356,47 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
     def __call__(self, X, Y=None, eval_gradient=False):
         from scipy.spatial.distance import pdist, cdist, squareform
         from scipy import special
+
         X = np.atleast_2d(X)
 
         if Y is None:
-            dists = pdist(X, metric='mahalanobis', VI=self.invLam)
-            Filter = (dists != 0.)
+            dists = pdist(X, metric="mahalanobis", VI=self.invLam)
+            Filter = dists != 0.0
             K = np.zeros_like(dists)
-            K[Filter] = dists[Filter] **(5./6.) *  special.kv(5./6., 2*np.pi * dists[Filter])
-            lim0 = special.gamma(5./6.) /(2 * ((np.pi)**(5./6.)) )
+            K[Filter] = dists[Filter] ** (5.0 / 6.0) * special.kv(
+                5.0 / 6.0, 2 * np.pi * dists[Filter]
+            )
+            lim0 = special.gamma(5.0 / 6.0) / (2 * ((np.pi) ** (5.0 / 6.0)))
             K = squareform(K)
             np.fill_diagonal(K, lim0)
             K /= lim0
         else:
             if eval_gradient:
-                raise ValueError(
-                    "Gradient can not be evaluated.")
-            dists = cdist(X, Y, metric='mahalanobis', VI=self.invLam)
-            Filter = (dists != 0.)
+                raise ValueError("Gradient can not be evaluated.")
+            dists = cdist(X, Y, metric="mahalanobis", VI=self.invLam)
+            Filter = dists != 0.0
             K = np.zeros_like(dists)
-            K[Filter] = dists[Filter] **(5./6.) *  special.kv(5./6., 2*np.pi * dists[Filter])
-            lim0 = special.gamma(5./6.) /(2 * ((np.pi)**(5./6.)) )
-            if np.sum(Filter) != len(K[0])*len(K[:,0]):
+            K[Filter] = dists[Filter] ** (5.0 / 6.0) * special.kv(
+                5.0 / 6.0, 2 * np.pi * dists[Filter]
+            )
+            lim0 = special.gamma(5.0 / 6.0) / (2 * ((np.pi) ** (5.0 / 6.0)))
+            if np.sum(Filter) != len(K[0]) * len(K[:, 0]):
                 K[~Filter] = lim0
             K /= lim0
 
         if eval_gradient:
-            raise ValueError(
-                "Gradient can not be evaluated.")
+            raise ValueError("Gradient can not be evaluated.")
         else:
             return K
 
     @property
     def hyperparameter_cholesky_factor(self):
-        return Hyperparameter("CholeskyFactor", "numeric", (1e-5, 1e5), int(self.ntheta))
+        return Hyperparameter(
+            "CholeskyFactor", "numeric", (1e-5, 1e5), int(self.ntheta)
+        )
 
     def get_params(self, deep=True):
-        return {"invLam":self.invLam}
+        return {"invLam": self.invLam}
 
     def set_params(self, invLam=None):
         if invLam is not None:
@@ -380,8 +412,8 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
     def theta(self, theta):
         self._theta = theta
         self._L = np.zeros_like(self.invLam)
-        self._L[np.diag_indices(self.ndim)] = np.exp(theta[:self.ndim])
-        self._L[np.tril_indices(self.ndim, -1)] = theta[self.ndim:]
+        self._L[np.diag_indices(self.ndim)] = np.exp(theta[: self.ndim])
+        self._L[np.tril_indices(self.ndim, -1)] = theta[self.ndim :]
         self.invLam = np.dot(self._L, self._L.T)
 
     def __repr__(self):

@@ -51,11 +51,21 @@ class GPInterpolation(object):
                          build in it. Build using meanify output across different
                          exposures. See meanify documentation. [default: None]
     """
-    def __init__(self, kernel='RBF(1)', optimizer='two-pcf', 
-                 normalize=True, p0=[3000., 0.,0.],
-                 white_noise=0., n_neighbors=4, average_fits=None, indice_meanify=None,
-                 nbins=20, min_sep=None, max_sep=None):
 
+    def __init__(
+        self,
+        kernel="RBF(1)",
+        optimizer="two-pcf",
+        normalize=True,
+        p0=[3000.0, 0.0, 0.0],
+        white_noise=0.0,
+        n_neighbors=4,
+        average_fits=None,
+        indice_meanify=None,
+        nbins=20,
+        min_sep=None,
+        max_sep=None,
+    ):
         self.normalize = normalize
         self.optimizer = optimizer
         self.white_noise = white_noise
@@ -64,7 +74,7 @@ class GPInterpolation(object):
         self.min_sep = min_sep
         self.max_sep = max_sep
 
-        if self.optimizer == 'anisotropic':
+        if self.optimizer == "anisotropic":
             self.robust_fit = True
         else:
             self.robust_fit = False
@@ -72,19 +82,25 @@ class GPInterpolation(object):
         self.p0_robust_fit = p0
         self.indice_meanify = indice_meanify
 
-        if isinstance(kernel,str):
+        if isinstance(kernel, str):
             self.kernel_template = eval_kernel(kernel)
         else:
-            raise TypeError("kernel should be a string a list or a numpy.ndarray of string")
+            raise TypeError(
+                "kernel should be a string a list or a numpy.ndarray of string"
+            )
 
-        if self.optimizer not in ['anisotropic', 'two-pcf', 'log-likelihood', 'none']:
-            raise ValueError("Only anisotropic, two-pcf, log-likelihood and none are supported for optimizer. Current value: %s"%(self.optimizer))
+        if self.optimizer not in ["anisotropic", "two-pcf", "log-likelihood", "none"]:
+            raise ValueError(
+                "Only anisotropic, two-pcf, log-likelihood and none are supported for optimizer. Current value: %s"
+                % (self.optimizer)
+            )
 
         if average_fits is not None:
             import fitsio
+
             average = fitsio.read(average_fits)
-            X0 = average['COORDS0'][0]
-            y0 = average['PARAMS0'][0]
+            X0 = average["COORDS0"][0]
+            y0 = average["PARAMS0"][0]
         else:
             X0 = None
             y0 = None
@@ -102,23 +118,28 @@ class GPInterpolation(object):
         if self.optimizer != "none":
             # Hyperparameters estimation using 2-point correlation
             # function information.
-            if self.optimizer in ['two-pcf', 'anisotropic']:
-                anisotropic = self.optimizer == 'anisotropic'
-                self._optimizer = treegp.two_pcf(X, y, y_err,
-                                                 self.min_sep, self.max_sep,
-                                                 nbins=self.nbins,
-                                                 anisotropic=anisotropic,
-                                                 robust_fit=self.robust_fit,
-                                                 p0=self.p0_robust_fit)
+            if self.optimizer in ["two-pcf", "anisotropic"]:
+                anisotropic = self.optimizer == "anisotropic"
+                self._optimizer = treegp.two_pcf(
+                    X,
+                    y,
+                    y_err,
+                    self.min_sep,
+                    self.max_sep,
+                    nbins=self.nbins,
+                    anisotropic=anisotropic,
+                    robust_fit=self.robust_fit,
+                    p0=self.p0_robust_fit,
+                )
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.
-            if self.optimizer == 'log-likelihood':
+            if self.optimizer == "log-likelihood":
                 self._optimizer = treegp.log_likelihood(X, y, y_err)
                 kernel = self._optimizer.optimizer(kernel)
         return kernel
 
     def predict(self, X, return_cov=False):
-        """ Predict responses to given coordinates.
+        """Predict responses to given coordinates.
 
         :param X:  The coordinates at which to interpolate.  (n_samples, 1 or 2).
         :returns:  Regressed parameters  (n_samples)
@@ -126,9 +147,14 @@ class GPInterpolation(object):
         y_init = copy.deepcopy(self._y)
         y_err = copy.deepcopy(self._y_err)
 
-        y_interp, y_cov = self.return_gp_predict(y_init-self._mean-self._spatial_average,
-                                                 self._X, X, self.kernel, y_err=y_err,
-                                                 return_cov=return_cov)
+        y_interp, y_cov = self.return_gp_predict(
+            y_init - self._mean - self._spatial_average,
+            self._X,
+            X,
+            self.kernel,
+            y_err=y_err,
+            return_cov=return_cov,
+        )
         y_interp = y_interp.T
         spatial_average = self._build_average_meanify(X)
         y_interp += self._mean + spatial_average
@@ -147,12 +173,14 @@ class GPInterpolation(object):
         :param y_err:  Error of y. (n_samples)
         """
         HT = kernel.__call__(X2, Y=X1)
-        K = kernel.__call__(X1) + np.eye(len(y))*y_err**2
+        K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
         factor = (cholesky(K, overwrite_a=True, lower=False), False)
         alpha = cho_solve(factor, y, overwrite_b=False)
-        y_predict = np.dot(HT,alpha.reshape((len(alpha),1))).T[0] 
+        y_predict = np.dot(HT, alpha.reshape((len(alpha), 1))).T[0]
         if return_cov:
-            fact = cholesky(K, lower=True) # I am computing maybe twice the same things...
+            fact = cholesky(
+                K, lower=True
+            )  # I am computing maybe twice the same things...
             v = cho_solve((fact, True), HT.T)
             y_cov = kernel.__call__(X2) - HT.dot(v)
             return y_predict, y_cov
@@ -181,13 +209,13 @@ class GPInterpolation(object):
         self._spatial_average = self._build_average_meanify(X)
 
         if self.white_noise > 0:
-            y_err = np.sqrt(copy.deepcopy(self._y_err)**2 + self.white_noise**2)
+            y_err = np.sqrt(copy.deepcopy(self._y_err) ** 2 + self.white_noise**2)
         self._y_err = y_err
 
         if self.normalize:
             self._mean = np.mean(y - self._spatial_average)
         else:
-            self._mean = 0.
+            self._mean = 0.0
 
     def _build_average_meanify(self, X):
         """Compute spatial average from meanify output for a given coordinate using KN interpolation.
@@ -195,15 +223,15 @@ class GPInterpolation(object):
 
         :param X: Coordinates of training coordinates where to interpolate. (n_samples, 1 or 2)
         """
-        if np.sum(np.equal(self._X0, 0)) != len(self._X0[:,0])*len(self._X0[0]):
+        if np.sum(np.equal(self._X0, 0)) != len(self._X0[:, 0]) * len(self._X0[0]):
             neigh = KNeighborsRegressor(n_neighbors=self.n_neighbors)
             neigh.fit(self._X0, self._y0)
-            average = neigh.predict(X)         
+            average = neigh.predict(X)
             if self.indice_meanify is not None:
-                average = average[:,self.indice_meanify]
+                average = average[:, self.indice_meanify]
             return average
         else:
-            return np.zeros((len(X[:,0])))
+            return np.zeros((len(X[:, 0])))
 
     def solve(self):
         """Set up this GPInterp object.
@@ -213,18 +241,27 @@ class GPInterpolation(object):
         self._init_theta = []
         kernel = copy.deepcopy(self.kernel)
         self._init_theta.append(kernel.theta)
-        self.kernel = self._fit(self.kernel, self._X, 
-                                self._y-self._mean-self._spatial_average, self._y_err)
+        self.kernel = self._fit(
+            self.kernel,
+            self._X,
+            self._y - self._mean - self._spatial_average,
+            self._y_err,
+        )
 
     def return_2pcf(self):
         """
         Return 2-point correlation function and its variance using Bootstrap.
         """
         anisotropic = self.optimizer == "anisotropic"
-        pcf = treegp.two_pcf(self._X, self._y-self._mean-self._spatial_average, self._y_err,
-                             self.min_sep, self.max_sep,
-                             nbins=self.nbins,
-                             anisotropic=anisotropic)
+        pcf = treegp.two_pcf(
+            self._X,
+            self._y - self._mean - self._spatial_average,
+            self._y_err,
+            self.min_sep,
+            self.max_sep,
+            nbins=self.nbins,
+            anisotropic=anisotropic,
+        )
         xi, xi_weight, distance, coord, mask = pcf.return_2pcf()
         return xi, xi_weight, distance, coord, mask
 
@@ -238,6 +275,8 @@ class GPInterpolation(object):
         kernel = copy.deepcopy(self.kernel)
         if theta is not None:
             kernel = kernel.clone_with_theta(theta)
-        logl = treegp.log_likelihood(self._X, self._y-self._mean-self._spatial_average, self._y_err)
+        logl = treegp.log_likelihood(
+            self._X, self._y - self._mean - self._spatial_average, self._y_err
+        )
         log_likelihood = logl.log_likelihood(kernel)
         return log_likelihood
