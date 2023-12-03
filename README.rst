@@ -1,5 +1,5 @@
-.. image:: https://travis-ci.org/PFLeget/treegp.svg?branch=master
-    :target: https://travis-ci.org/PFLeget/treegp
+.. image:: https://github.com/PFLeget/treegp/actions/workflows/test_treegp.yaml/badge.svg
+   :target: https://github.com/PFLeget/treegp/actions
 .. image:: https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg
   :target: https://codecov.io/gh/PFLeget/treegp
 .. image:: https://readthedocs.org/projects/treegp/badge/?version=latest
