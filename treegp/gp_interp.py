@@ -8,7 +8,6 @@ import copy
 
 from .kernels import eval_kernel
 
-from sklearn.gaussian_process.kernels import Kernel
 from sklearn.neighbors import KNeighborsRegressor
 from scipy.linalg import cholesky, cho_solve
 

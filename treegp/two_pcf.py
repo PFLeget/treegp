@@ -2,7 +2,6 @@ from __future__ import print_function
 import numpy as np
 import treecorr
 import treegp
-from .kernels import eval_kernel
 from scipy import optimize
 import iminuit
 import sklearn
@@ -199,7 +198,7 @@ class robust_2dfit(object):
                 self._minimize_minuit(p0=new_p0)
                 if self._fit_ok:
                     break
-        pcf = self._model_skl(
+        _ = self._model_skl(
             self.result[0], self.result[1], self.result[2], self.result[3]
         )
 

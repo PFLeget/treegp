@@ -3,7 +3,8 @@
 """
 
 import numpy as np
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import pdist, cdist, squareform
+from scipy import special
 from sklearn.gaussian_process.kernels import (
     StationaryKernelMixin,
     NormalizedKernelMixin,
@@ -39,7 +40,7 @@ def eval_kernel(kernel):
         execstr = "{0} = module.{0}".format(cls.__name__)
         exec(execstr, globals(), locals())
 
-    from numpy import array
+    from numpy import array  # noqa: F401
 
     try:
         k = eval(kernel)
@@ -109,8 +110,6 @@ class AnisotropicRBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
         self._bounds = bounds
 
     def __call__(self, X, Y=None, eval_gradient=False):
-        from scipy.spatial.distance import pdist, cdist, squareform
-
         X = np.atleast_2d(X)
 
         if Y is None:
@@ -244,8 +243,6 @@ class VonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
             hyperparameter of the kernel. Only returned when eval_gradient
             is True.
         """
-        from scipy.spatial.distance import pdist, cdist, squareform
-        from scipy import special
 
         X = np.atleast_2d(X)
         length_scale = _check_length_scale(X, self.length_scale)
@@ -354,9 +351,6 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
         self._bounds = bounds
 
     def __call__(self, X, Y=None, eval_gradient=False):
-        from scipy.spatial.distance import pdist, cdist, squareform
-        from scipy import special
-
         X = np.atleast_2d(X)
 
         if Y is None:
