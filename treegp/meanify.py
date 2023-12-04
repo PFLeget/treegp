@@ -4,7 +4,6 @@
 import numpy as np
 from scipy.stats import binned_statistic_2d
 import fitsio
-import os
 
 
 class meanify(object):
