@@ -17,3 +17,16 @@ from .kernels import AnisotropicVonKarman
 from .kernels import eval_kernel
 
 from .meanify import meanify
+
+__all__ = [
+    "__version__",
+    "__version_info__",
+    "GPInterpolation",
+    "two_pcf",
+    "log_likelihood",
+    "AnisotropicRBF",
+    "VonKarman",
+    "AnisotropicVonKarman",
+    "eval_kernel",
+    "meanify",
+]
