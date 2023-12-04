@@ -6,6 +6,9 @@
   :target: https://treegp.readthedocs.io/en/latest/?badge=latest
 .. image:: https://img.shields.io/badge/astro--ph.IM-2103.09881-red
     :target: https://arxiv.org/abs/2103.09881
+.. image:: https://img.shields.io/badge/DOI-10.1051%2F0004--6361%2F202140463-blue.svg
+   :target: https://doi.org/10.1051/0004-6361/202140463
+		
 
 .. inclusion-marker-do-not-remove
 
