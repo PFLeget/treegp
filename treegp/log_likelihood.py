@@ -35,7 +35,7 @@ class log_likelihood(object):
             log_likelihood = -0.5 * chi2
             log_likelihood -= (self.ndata / 2.0) * np.log((2.0 * np.pi))
             log_likelihood -= 0.5 * log_det
-        except:
+        except BaseException:
             log_likelihood = -np.inf
 
         return log_likelihood
