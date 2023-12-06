@@ -47,4 +47,10 @@ jobs:
       - name: Test with pytest and submit to codecov
         run: |
           cd tests
-          pytest --codecov
+          pytest --cov=treegp --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v2
+        with:
+          file: ./tests/coverage.xml
+          fail_ci_if_error: true  # Optional: specify if CI should fail when Codecov upload fails
