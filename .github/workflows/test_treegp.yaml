@@ -52,5 +52,5 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
-          file: ./coverage.xml
+          file: ./tests/coverage.xml
           fail_ci_if_error: true  # Optional: specify if CI should fail when Codecov upload fails
