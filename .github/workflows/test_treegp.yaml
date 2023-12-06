@@ -47,7 +47,7 @@ jobs:
       - name: Test with pytest and submit to codecov
         run: |
           cd tests
-          pytest --cov=../treegp --cov-report=xml
+          pytest --cov=treegp --cov-report=xml --cov-fail-under=80
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
