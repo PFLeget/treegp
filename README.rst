@@ -19,7 +19,7 @@ Overview
 
 ``treegp`` have some specific features compared to other gaussian processes available code:
 
-*   Hyperparameters estimation will scale in O(N) with the the 2-points correlation function estimation compared to O(N^3) with the classical maximum likelihood.
+*   Hyperparameters estimation will scale in :math:`O(n)` with the the 2-points correlation function estimation compared to :math:`O(n log(n))` with the classical maximum likelihood.
     
 *   Gaussian process interpolation can be performed around a mean function
     
