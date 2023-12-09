@@ -1,4 +1,5 @@
 ![Build Status](https://github.com/PFLeget/treegp/actions/workflows/test_treegp.yaml/badge.svg)
+[![Build Status](https://github.com/PFLeget/treegp/actions/workflows/test_treegp.yaml/badge.svg)](https://github.com/PFLeget/treegp/actions)
 ![Codecov](https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg)
 ![Read the Docs](https://readthedocs.org/projects/treegp/badge/?version=latest)
 ![astro-ph.IM](https://img.shields.io/badge/astro--ph.IM-2103.09881-red)
