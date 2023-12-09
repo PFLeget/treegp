@@ -1,9 +1,8 @@
-![Build Status](https://github.com/PFLeget/treegp/actions/workflows/test_treegp.yaml/badge.svg)
 [![Build Status](https://github.com/PFLeget/treegp/actions/workflows/test_treegp.yaml/badge.svg)](https://github.com/PFLeget/treegp/actions)
-![Codecov](https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg)
-![Read the Docs](https://readthedocs.org/projects/treegp/badge/?version=latest)
-![astro-ph.IM](https://img.shields.io/badge/astro--ph.IM-2103.09881-red)
-![DOI](https://img.shields.io/badge/DOI-10.1051%2F0004--6361%2F202140463-blue.svg)
+[![Codecov](https://codecov.io/gh/PFLeget/treegp/branch/master/graph/badge.svg)](https://codecov.io/gh/PFLeget/treegp)
+[![Read the Docs](https://readthedocs.org/projects/treegp/badge/?version=latest)](https://treegp.readthedocs.io/en/latest/?badge=latest)
+[![astro-ph.IM](https://img.shields.io/badge/astro--ph.IM-2103.09881-red)](https://arxiv.org/abs/2103.09881)
+[![DOI](https://img.shields.io/badge/DOI-10.1051%2F0004--6361%2F202140463-blue.svg)](https://doi.org/10.1051/0004-6361/202140463)
 
 ## Overview
 
