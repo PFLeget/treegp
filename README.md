@@ -8,11 +8,11 @@
 
 `treegp` is a python gaussian process code that perform 1D and 2D interpolation.
 
-`treegp` has some specific features compared to other gaussian processes available code:
+`treegp` has some special features compared to other available Gaussian Processes codes:
 
 - Hyperparameters estimation will scale in $\cal{O}(n \ log(n))$ with the 2-points correlation function estimation compared to $\cal{O}(n^3)$ with the classical maximum likelihood.
 - Gaussian process interpolation can be performed around a mean function
-- Tools are given to compute the mean function (`meanify`)
+- A tool is provided to compute the mean function (`meanify`)
 
 `treegp` was originally developed for Point Spread Function interpolation within [Piff](https://github.com/rmjarvis/Piff). There is a specific article that describes the math used in `treegp` in the context of modeling astrometric shifts of the Subaru Telescope due to atmospheric turbulences. This article can be found [here](	https://doi.org/10.1051/0004-6361/202140463).
 
