@@ -6,8 +6,6 @@
 Welcome to treegp's documentation!
 ===================================
 
-.. warning:: Documentation under development
-
 .. toctree::
    :maxdepth: 2
 	      
@@ -21,9 +19,4 @@ Welcome to treegp's documentation!
 .. toctree::
    :maxdepth: 2
 	      
-   treegp_gp_opt
-   
-.. toctree::
-   :maxdepth: 2
-	      
-   treegp_meanify
+   treegp_more_info

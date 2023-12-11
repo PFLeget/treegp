@@ -8,7 +8,7 @@ Overview
 
 ``treegp`` have some specific features compared to other gaussian processes available code:
 
-*   Hyperparameters estimation will scale in :math:`{\cal{O}}(N)` with the the 2-points correlation function estimation compared to :math:`{\cal{O}}(N^3)` with the classical maximum likelihood.
+*   Hyperparameters estimation will scale in :math:`{\cal{O}}(N \log(N))` with the the 2-points correlation function estimation compared to :math:`{\cal{O}}(N^3)` with the classical maximum likelihood.
     
 *   Gaussian process interpolation can be performed around a mean function
     
@@ -46,6 +46,6 @@ installs below):
 Python
 ``````
 
-``treegp`` is regularly tested on Python 2.7, 3.6, 3.7, and 3.8.  It may work in other
+``treegp`` is regularly tested on Python 3.6, 3.7, and 3.8.  It may work in other
 versions of Python (e.g. pypy), but these are not currently supported.
 			      
