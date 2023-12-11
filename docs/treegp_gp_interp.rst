@@ -1,5 +1,5 @@
 ################
-Gaussian Process interpolation
+Gaussian Process interpolation using treegp
 ################
 
 

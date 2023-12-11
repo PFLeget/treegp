@@ -13,9 +13,6 @@ Why use a mean function for a Gaussian process?
     </div>
 
 
-Constant mean function
-======================
-
 
 meanify: a mean function with spatial variation
 ===============================================
