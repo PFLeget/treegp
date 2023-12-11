@@ -19,4 +19,4 @@ Welcome to treegp's documentation!
 .. toctree::
    :maxdepth: 2
 	      
-   treegp_meanify
+   treegp_more_info
