@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 print("Using setuptools version", setuptools.__version__)
 print("Python version = ", sys.version)
 
-with open("README.md") as f:
+with open("README.rst") as f:
     long_description = f.read()
 
 # Read in the version from treegp/_version.py
