@@ -42,4 +42,4 @@ libraries listed in the [requirements](requirements.txt) file
 
 ## Python
 
-treegp is regularly tested on Python 2.7, 3.6, 3.7, and 3.8. It may work in other versions of Python (e.g. pypy), but these are not currently supported.
+treegp is regularly tested on Python 3.6, 3.7, and 3.8. It may work in other versions of Python (e.g. pypy), but these are not currently supported.

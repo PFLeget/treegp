@@ -2,55 +2,67 @@
 Gaussian Process interpolation using treegp
 ################
 
+Quick start
+===========
 
-1D interpolation example
-========================
 
-Before showing how to perform a one dimentional interpolation using
-``treegp``, a one dimentional gaussian random field is generated as an
-example of data that could be interpolated using a Gaussian Process
-regression. A gaussian random field :math:`y` is define as:
+Here is a simple example of a 2D gaussian process interpolation 
+using ``treegp``. Before showing how to use ``treegp``, the interpolation needs 
+to be perform over some data and we will simulate some Gaussian random field below. 
+In the block bellow you can find how: 
 
-:math:`y \sim {\cal{N}}(0, K)`
-
-where :math:`K` is the kernel. For this specific example I will used the
-classic Radial Basis Function kernel (RBF in the following also know as
-squarred exponential/gaussian kernel):
-
-:math:`K(x_i, x_j) = \sigma^2 \exp\left( - \frac{1}{2} \frac{(x_i-x_j)^2}{l^2}\right)`
-
-Where :math:`\sigma^2` is the variance of :math:`y` and :math:`l` the
-correlation length of :math:`y`.
-
-``treegp`` share the same API for kernel definition as ``scikit-learn``.
-So any ``scikit-learn`` kernel would work in ``treegp``.
-
-Consequently here is an example of how to generate a one dimentional
-gaussian random field using ``numpy`` and ``scikit-learn``.
+- How to generate a 2d anisotropic gaussian random field
+- How to write the correlation length matrix in terms of the isotropic correlation lenght and shear parameters (:math:`g_1`, :math:`g_1`); see `Léget et al 2021 <https://doi.org/10.1051/0004-6361/202140463>`_
 
 .. code:: ipython3
 
-    import matplotlib.pyplot as plt
-    from sklearn.gaussian_process.kernels import RBF
     import numpy as np
-    
-    def make_1d_grf(kernel, noise=None, seed=42, npoints=40):
+    import treegp
+    from treegp import AnisotropicRBF
+    import matplotlib.pyplot as plt
+
+    def get_correlation_length_matrix(size, g1, g2):
         """
-        Function to generate a 1D gaussian random field for a 
+        Produce correlation matrix to introduce anisotropy in kernel.
+        Used same parametrization as shape measurement in weak-lensing
+        because this is mathematicaly equivalent (anistropic kernel
+        will have an elliptical shape).
+
+        :param correlation_length: Correlation lenght of the kernel.
+        :param g1, g2:             Shear applied to isotropic kernel.
+        """
+        if abs(g1) > 1:
+            g1 = 0
+        if abs(g2) > 1:
+            g2 = 0
+        g = np.sqrt(g1**2 + g2**2)
+        q = (1 - g) / (1 + g)
+        phi = 0.5 * np.arctan2(g2, g1)
+        rot = np.array([[np.cos(phi), np.sin(phi)], [-np.sin(phi), np.cos(phi)]])
+        ell = np.array([[size**2, 0], [0, (size * q) ** 2]])
+        L = np.dot(rot.T, ell.dot(rot))
+        return L
+
+
+    def make_2d_grf(kernel, noise=None, seed=42, npoints=40):
+        """
+        Function to generate a 2D gaussian random field for a
         given scikit-learn kernel.
-        
+
         :param kernel:  given sklearn kernel.
-        :param noise:   float. Level of noise to add to the 
+        :param noise:   float. Level of noise to add to the
                         gaussian randomn field. (default: None)
-        :param seed:    int. seed of the random process. (default: 42) 
-        :param npoints: int. number of points to generate for the 
+        :param seed:    int. seed of the random process. (default: 42)
+        :param npoints: int. number of points to generate for the
                         simulations.
         """
         # fixing the seed
         np.random.seed(seed)
-        # generate random 1D coordinate
-        x = np.random.uniform(-10,10, npoints).reshape((npoints,1))
-        # creating the correlation matrix / kernel 
+        # generate random 2D coordinate
+        x1 = np.random.uniform(-10, 10, npoints)
+        x2 = np.random.uniform(-10, 10, npoints)
+        x = np.array([x1, x2]).T
+        # creating the correlation matrix / kernel
         K = kernel.__call__(x)
         # generating gaussian random field
         y = np.random.multivariate_normal(np.zeros(npoints), K)
@@ -61,91 +73,51 @@ gaussian random field using ``numpy`` and ``scikit-learn``.
             return x, y, y_err
         else:
             return x, y, None
-    
-    kernel = 2**2 * RBF(1)
-    x, y, y_err = make_1d_grf(kernel, noise=0.5, npoints=100)
-    
-    plt.figure()
-    plt.scatter(x, y, c='b', s=10, label='data')
-    plt.errorbar(x, y, yerr=y_err, linestyle='',
-                 marker='.', color='b', zorder=0)
-    plt.plot([-15,15],[0,0], 'k--')
-    plt.xlim(-15,15)
-    plt.ylim(-6,6)
-    plt.xlabel('X', fontsize=14)
-    plt.ylabel('y', fontsize=14)
-    plt.legend(fontsize=14, loc=(1.02,0.9))
+
+    L = get_correlation_length_matrix(2., 0.3, 0.3)
+    invL = np.linalg.inv(L)
+    kernel = 2**2 * AnisotropicRBF(invLam=invL)
+    x, y, y_err = make_2d_grf(kernel, noise=0.1, seed=42, npoints=2000)
+    plt.scatter(x[:,0], x[:,1], c=y, cmap=plt.cm.seismic, vmin=-4, vmax=4)
+    cb = plt.colorbar()
+    cb.set_label('y')
+    plt.xlabel('$x_0$')
+    plt.ylabel('$x_1$')
+
+.. image:: generated_field.png
 
 
-.. image:: output_0_grf_1d.png
-
-
-And here an example of how to interpolate this data using ``treegp``
-without optimizing hyperparameters:
+To do the gaussian process interpolation with ``treegp`` it follow this API: 
 
 .. code:: ipython3
 
-    import treegp
+    kernel_treegp = "2**2 * AnisotropicRBF(invLam={0!r})".format(invL)
 
-    # treegp will take a sklearn like kernel
-    # but in a string format.
-    kernel = "2**2 * RBF(1)"
-    
-    # init here, take the kernel, no hyperparameters optimization
-    # will be done (optimizer='none'), and normalize=False means
-    # that no constant mean function is took into account.
-    gp = treegp.GPInterpolation(kernel=kernel, optimizer='none', normalize=False)
-    
-    # load the data
+    gp = treegp.GPInterpolation(
+                kernel=kernel_treegp,
+                optimizer="anisotropic",
+                normalize=True,
+                nbins=21,
+                min_sep=0.0,
+                max_sep=1.0,
+                p0=[6., 0.0, 0.0],
+            )
+    # feed with data treegp
     gp.initialize(x, y, y_err=y_err)
-    
-    # fit hyperparameters, however, as optimizer='none',
-    # will do nothing and will use the given hyperparameters,
-    # of the given kernel.
+    # solve for hyperparameters 
     gp.solve()
-    
-    # get the gaussian process interpolation, and associated
-    # covariance. If you are familiar with sklearn gaussian process
-    # interpolation, you should be aware for one dimentional interpolation
-    # it will take column and not row.
-    new_x = np.linspace(-15, 15, 200).reshape((200,1))
-    y_predict, y_cov = gp.predict(new_x, return_cov=True)
-    y_std = np.sqrt(np.diag(y_cov))
-    
-    # plot data/gp interpolation
-    plt.figure()
-    plt.scatter(x, y, c='b', s=10, label='data')
-    plt.errorbar(x, y, yerr=y_err, linestyle='',
-                 marker='.', color='b', zorder=0)
-    plt.plot(new_x, y_predict, 'r', lw='3', label='GP interp')
-    plt.fill_between(new_x.T[0], y_predict-y_std, 
-                     y_predict+y_std, color='r', alpha=0.5)
-    plt.plot([-15,15],[0,0], 'k--')
-    plt.xlim(-15,15)
-    plt.ylim(-6,6)
-    plt.xlabel('X', fontsize=14)
-    plt.ylabel('y', fontsize=14)
-    plt.legend(fontsize=14, loc=(1.02,0.8))
+
+    # test on test position and compute GP interpolation on it.
+    x1_test = np.random.uniform(-10, 10, 1500)
+    x2_test = np.random.uniform(-10, 10, 1500)
+    x_test = np.array([x1_test, x2_test]).T
+    y_test, y_test_cov = gp.predict(x_test, return_cov=True)
 
 
 
-.. image:: output_1_grf_1d_gp_interp.png
+.. image:: fitted.png
 
 
-If you have questions about hyperparameters optization go here.
-
-And if you have questions about behavior of the interpolation for extrapolation
-go here.
-
-
-
-2D interpolation example
-========================
-
-
-
-What hyperparameters and kernel ?
-=================================
 
 
 

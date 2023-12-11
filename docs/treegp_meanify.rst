@@ -1,20 +1,11 @@
 ###################################
-Mean function of a Gaussian process
+More informations
 ###################################
 
 
-Why use a mean function for a Gaussian process?
+Notebooks and tests
 ===============================================
 
-.. raw:: html
-	 
-    <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; height: auto;">
-        <iframe src="https://www.youtube.com/embed/PXA3GhE-PwY" frameborder="0" allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>
-    </div>
-
-
-
-meanify: a mean function with spatial variation
-===============================================
-
+More information on what is possible to do with ``treegp`` can be found on GitHub withing the `notebooks <https://github.com/PFLeget/treegp/tree/master/notebooks>`_ and
+the `tests <https://github.com/PFLeget/treegp/tree/master/tests>`_.
 
