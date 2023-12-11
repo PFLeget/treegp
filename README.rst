@@ -17,7 +17,7 @@ Overview
 
 ``treegp`` is a python gaussian process code that perform 1D and 2D interpolation.
 
-`treegp` has some special features compared to other available Gaussian Processes codes:
+``treegp`` has some special features compared to other available Gaussian Processes codes:
 
 *   Hyperparameters estimation will scale in O(N log(N)) with the the 2-points correlation function estimation compared to O(N^3) with the classical maximum likelihood.
     
