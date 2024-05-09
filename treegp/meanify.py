@@ -1,6 +1,7 @@
 """
 .. module:: meanify
 """
+
 import numpy as np
 from scipy.stats import binned_statistic_2d
 import fitsio
