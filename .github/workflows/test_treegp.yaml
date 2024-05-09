@@ -54,3 +54,5 @@ jobs:
         with:
           file: ./tests/coverage.xml
           fail_ci_if_error: true  # Optional: specify if CI should fail when Codecov upload fails
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
