@@ -279,3 +279,80 @@ class GPInterpolation(object):
         )
         log_likelihood = logl.log_likelihood(kernel)
         return log_likelihood
+
+    def plot_fitted_kernel(self):
+
+        if self.optimizer in ["none", "log-likehood", "two-pcf"]:
+            raise NotImplementedError(
+                "This method is only available for anisotropic optimizer"
+            )
+        import matplotlib.pyplot as plt
+
+        EXT = [
+            np.min(self._optimizer._2pcf_dist[:, 0]),
+            np.max(self._optimizer._2pcf_dist[:, 0]),
+            np.min(self._optimizer._2pcf_dist[:, 1]),
+            np.max(self._optimizer._2pcf_dist[:, 1]),
+        ]
+
+        CM = plt.cm.seismic
+
+        MAX = np.max(self._optimizer._2pcf)
+        N = int(np.sqrt(len(self._optimizer._2pcf)))
+        plt.figure(figsize=(14, 4))
+        plt.subplots_adjust(wspace=0.5, left=0.07, right=0.95, bottom=0.1, top=0.92)
+
+        plt.subplot(1, 3, 1)
+        plt.imshow(
+            self._optimizer._2pcf.reshape(N, N),
+            extent=EXT,
+            interpolation="nearest",
+            origin="lower",
+            vmin=-MAX,
+            vmax=MAX,
+            cmap=CM,
+        )
+        cbar = plt.colorbar()
+        cbar.formatter.set_powerlimits((0, 0))
+        cbar.update_ticks()
+        cbar.set_label("$\\xi$", fontsize=16)
+        plt.xlabel(r"$\Delta x$", fontsize=16)
+        plt.ylabel(r"$\Delta y$", fontsize=16)
+        plt.title("Measured 2-PCF", fontsize=16)
+
+        plt.subplot(1, 3, 2)
+        plt.imshow(
+            self._optimizer._2pcf_fit.reshape(N, N),
+            extent=EXT,
+            interpolation="nearest",
+            origin="lower",
+            vmin=-MAX,
+            vmax=MAX,
+            cmap=CM,
+        )
+        cbar = plt.colorbar()
+        cbar.formatter.set_powerlimits((0, 0))
+        cbar.update_ticks()
+        cbar.set_label("$\\xi'$", fontsize=16)
+        plt.xlabel(r"$\Delta x$", fontsize=16)
+        plt.title("Fitted 2-PCF", fontsize=16)
+
+        plt.subplot(1, 3, 3)
+        residuals = self._optimizer._2pcf.reshape(
+            N, N
+        ) - self._optimizer._2pcf_fit.reshape(N, N)
+        plt.imshow(
+            residuals,
+            extent=EXT,
+            interpolation="nearest",
+            origin="lower",
+            vmin=-MAX,
+            vmax=MAX,
+            cmap=CM,
+        )
+        cbar = plt.colorbar()
+        cbar.formatter.set_powerlimits((0, 0))
+        cbar.update_ticks()
+        cbar.set_label("$\\xi - \\xi'$", fontsize=16)
+        plt.xlabel(r"$\Delta x$", fontsize=16)
+        plt.title("Difference", fontsize=16)

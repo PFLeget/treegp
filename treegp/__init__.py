@@ -18,6 +18,8 @@ from .kernels import eval_kernel
 
 from .meanify import meanify
 
+from .utils import comp_eb
+
 __all__ = [
     "__version__",
     "__version_info__",
@@ -29,4 +31,5 @@ __all__ = [
     "AnisotropicVonKarman",
     "eval_kernel",
     "meanify",
+    "comp_eb",
 ]
