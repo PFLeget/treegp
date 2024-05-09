@@ -124,6 +124,11 @@ def test_hyperparameter_search_2d():
         )
         gp.initialize(x, y, y_err=y_err)
         gp.solve()
+        if opt == "anisotropic":
+            try:
+                gp.plot_fitted_kernel()
+            except:
+                raise ValueError("Failed to plot fitted kernel")
         # test if found hyperparameters are close the true hyperparameters.
         np.testing.assert_allclose(kernel_skl.theta, gp.kernel.theta, atol=5e-1)
 

@@ -286,6 +286,11 @@ class GPInterpolation(object):
             raise NotImplementedError(
                 "This method is only available for anisotropic optimizer"
             )
+        import os
+        if os.getenv('GITHUB_ACTIONS') == 'true':
+            # Code is running under GitHub Actions
+            import matplotlib
+            matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
         EXT = [
