@@ -124,11 +124,18 @@ def test_hyperparameter_search_2d():
         )
         gp.initialize(x, y, y_err=y_err)
         gp.solve()
+        # Test if the plot is running (not if correct).
         if opt == "anisotropic":
             try:
                 gp.plot_fitted_kernel()
             except:
                 raise ValueError("Failed to plot fitted kernel")
+        # Test if E/B decomposition is running (not if correct).
+        if opt == "anisotropic":
+            try:
+                e_mode, b_mode, logr = treegp.comp_eb(x[:, 0], x[:, 1], y, y)
+            except:
+                raise ValueError("Failed to compute E/B decomposition")
         # test if found hyperparameters are close the true hyperparameters.
         np.testing.assert_allclose(kernel_skl.theta, gp.kernel.theta, atol=5e-1)
 
