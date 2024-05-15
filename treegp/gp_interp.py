@@ -306,7 +306,7 @@ class GPInterpolation(object):
 
         MAX = np.max(self._optimizer._2pcf)
         N = int(np.sqrt(len(self._optimizer._2pcf)))
-        plt.figure(figsize=(14, 4))
+        fig = plt.figure(figsize=(14, 4))
         plt.subplots_adjust(wspace=0.5, left=0.07, right=0.95, bottom=0.1, top=0.92)
 
         plt.subplot(1, 3, 1)
@@ -363,3 +363,5 @@ class GPInterpolation(object):
         cbar.set_label("$\\xi - \\xi'$", fontsize=16)
         plt.xlabel(r"$\Delta x$", fontsize=16)
         plt.title("Difference", fontsize=16)
+
+        return fig

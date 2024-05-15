@@ -127,7 +127,7 @@ def test_hyperparameter_search_2d():
         # Test if the plot is running (not if correct).
         if opt == "anisotropic":
             try:
-                gp.plot_fitted_kernel()
+                fig = gp.plot_fitted_kernel()
             except:
                 raise ValueError("Failed to plot fitted kernel")
         # Test if E/B decomposition is running (not if correct).

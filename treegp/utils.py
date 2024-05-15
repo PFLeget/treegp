@@ -14,6 +14,19 @@ def vcorr(x, y, dx, dy, rmin=5.0 / 3600.0, rmax=1.5, dlogr=0.05, maxpts=30000):
     xi_- - <vr1 vr2 - vt1 vt2>
     xi_x - <vr1 vt2 + vt1 vr2>
     xi_z2 - <vx1 vx2 - vy1 vy2 + 2 i vx1 vy2>
+
+    Parameters
+    ----------
+    x, y : array_like. positions of objects.
+    dx, dy : array_like. astrometric shift.
+    rmin : float. minimum separation in degrees. (default: 5.0 / 3600.0)
+    rmax : float. maximum separation in degrees. (default: 1.5)
+    dlogr : float. bin size in log(r). (default: 0.05)
+    maxpts : int. maximum number of points to use. (default: 30000)
+
+    Returns
+    -------
+    logr, xiplus, ximinus, xicross, xiz2 : array_like.
     """
     if len(x) > maxpts:
         # Subsample array to get desired number of points
