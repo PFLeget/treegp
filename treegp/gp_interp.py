@@ -172,10 +172,11 @@ class GPInterpolation(object):
         :param y_err:  Error of y. (n_samples)
         """
         HT = kernel.__call__(X2, Y=X1)
-        K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
-        factor = (cholesky(K, overwrite_a=True, lower=False), False)
-        alpha = cho_solve(factor, y, overwrite_b=False)
-        y_predict = np.dot(HT, alpha.reshape((len(alpha), 1))).T[0]
+        if self._alpha is None:
+            K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
+            factor = (cholesky(K, overwrite_a=True, lower=False), False)
+            self._alpha = cho_solve(factor, y, overwrite_b=False)
+        y_predict = np.dot(HT, self._alpha.reshape((len(self._alpha), 1))).T[0]
         if return_cov:
             fact = cholesky(
                 K, lower=True
@@ -215,6 +216,9 @@ class GPInterpolation(object):
             self._mean = np.mean(y - self._spatial_average)
         else:
             self._mean = 0.0
+        # Initialize alpha to None so that we know to recompute it if we change the
+        # input data.
+        self._alpha = None
 
     def _build_average_meanify(self, X):
         """Compute spatial average from meanify output for a given coordinate using KN interpolation.
