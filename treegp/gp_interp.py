@@ -179,6 +179,8 @@ class GPInterpolation(object):
             self._alpha = cho_solve(factor, y, overwrite_b=False)
         y_predict = np.dot(HT, self._alpha.reshape((len(self._alpha), 1))).T[0]
         if return_cov:
+            if self._alpha is not None:
+                K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
             fact = cholesky(
                 K, lower=True
             )  # I am computing maybe twice the same things...
