@@ -11,6 +11,23 @@ from .kernels import eval_kernel
 from sklearn.neighbors import KNeighborsRegressor
 from scipy.linalg import cholesky, cho_solve
 
+import jax
+from jax import jit
+
+
+@jit
+def jax_get_alpha(y, K):
+    # factor = (cholesky(K, overwrite_a=True, lower=False), False)
+    # alpha = cho_solve(factor, y, overwrite_b=False)
+    factor = (jax.scipy.linalg.cholesky(K, overwrite_a=True, lower=False), False)
+    alpha = jax.scipy.linalg.cho_solve(factor, y, overwrite_b=False)
+    return alpha.reshape((len(alpha), 1))
+
+
+@jit
+def jax_get_y_predict(HT, alpha):
+    return jax.numpy.dot(HT, alpha).T[0]
+
 
 class GPInterpolation(object):
     """
@@ -138,7 +155,7 @@ class GPInterpolation(object):
                 kernel = self._optimizer.optimizer(kernel)
         return kernel
 
-    def predict(self, X, return_cov=False):
+    def predict(self, X, return_cov=False, use_jax=False):
         """Predict responses to given coordinates.
 
         :param X:  The coordinates at which to interpolate.  (n_samples, 1 or 2).
@@ -147,14 +164,24 @@ class GPInterpolation(object):
         y_init = copy.deepcopy(self._y)
         y_err = copy.deepcopy(self._y_err)
 
-        y_interp, y_cov = self.return_gp_predict(
-            y_init - self._mean - self._spatial_average,
-            self._X,
-            X,
-            self.kernel,
-            y_err=y_err,
-            return_cov=return_cov,
-        )
+        if use_jax:
+            y_interp, y_cov = self.jax_return_gp_predict(
+                y_init - self._mean - self._spatial_average,
+                self._X,
+                X,
+                self.kernel,
+                y_err=y_err,
+                return_cov=return_cov,
+            )
+        else:
+            y_interp, y_cov = self.return_gp_predict(
+                y_init - self._mean - self._spatial_average,
+                self._X,
+                X,
+                self.kernel,
+                y_err=y_err,
+                return_cov=return_cov,
+            )
         y_interp = y_interp.T
         spatial_average = self._build_average_meanify(X)
         y_interp += self._mean + spatial_average
@@ -174,11 +201,32 @@ class GPInterpolation(object):
         """
         HT = kernel.__call__(X2, Y=X1)
         if self._alpha is None:
+            print("I compute alpha")
             K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
             factor = (cholesky(K, overwrite_a=True, lower=False), False)
             self._alpha = cho_solve(factor, y, overwrite_b=False)
         y_predict = np.dot(HT, self._alpha.reshape((len(self._alpha), 1))).T[0]
         if return_cov:
+            if self._alpha is not None:
+                K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
+            fact = cholesky(
+                K, lower=True
+            )  # I am computing maybe twice the same things...
+            v = cho_solve((fact, True), HT.T)
+            y_cov = kernel.__call__(X2) - HT.dot(v)
+            return y_predict, y_cov
+        else:
+            return y_predict, None
+
+    def jax_return_gp_predict(self, y, X1, X2, kernel, y_err, return_cov=False):
+        HT = kernel.__call__(X2, Y=X1)
+        # if self._alpha is None:
+        print("I compute alpha")
+        K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
+        self._alpha = jax_get_alpha(y, K)
+        y_predict = jax_get_y_predict(HT, self._alpha)
+        if return_cov:
+            # TO DO: switch to jax if needed.
             if self._alpha is not None:
                 K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
             fact = cholesky(

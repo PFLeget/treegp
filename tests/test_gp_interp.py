@@ -19,7 +19,7 @@ def test_gp_interp_1d():
     # of the kernel matrix is close to 0.). This
     # problem is solved by adding a little bit of
     # white noise when there is no noise.
-    white_noise = [1e-5, 0.0]
+    white_noise = [1e-3, 0.0]
     sigma = [1.0, 2.0]
     l = [2.0, 2.0]
     atols_on_data = [0.0, 1e-3]
@@ -107,7 +107,7 @@ def test_gp_interp_2d():
     # of the kernel matrix is close to 0.). This
     # problem is solved by adding a little bit of
     # white noise when there is no noise.
-    white_noise = [1e-5, 0.0]
+    white_noise = [1e-3, 0.0]
     sigma = [1.0, 1.0]
     size = [2.0, 4.0]
     g1 = [0.0, 0.2]
