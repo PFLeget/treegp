@@ -13,6 +13,17 @@ from scipy.linalg import cholesky, cho_solve
 
 import jax
 from jax import jit
+import jax.numpy as jnp
+
+
+@jit
+def jax_pdist_squared(X):
+    return jnp.sum((X[:, None, :] - X[None, :, :]) ** 2, axis=-1)
+
+
+@jit
+def jax_cdist_squared(XA, XB):
+    return jnp.sum((XA[:, None, :] - XB[None, :, :]) ** 2, axis=-1)
 
 
 @jit
@@ -26,7 +37,40 @@ def jax_get_alpha(y, K):
 
 @jit
 def jax_get_y_predict(HT, alpha):
-    return jax.numpy.dot(HT, alpha).T[0]
+    return jnp.dot(HT, alpha).T[0]
+
+
+@jit
+def jax_rbf_k(x1, sigma, correlation_length, y_err):
+    """Compute the RBF kernel with JAX.
+
+    :param x1:              The first set of points. (n_samples,)
+    :param sigma:           The amplitude of the kernel.
+    :param correlation_length: The correlation length of the kernel.
+    :param y_err:           The error of the field. (n_samples)
+    :param white_noise:     The white noise of the field.
+    """
+
+    l1 = jax_pdist_squared(x1)
+    K = (sigma**2) * jnp.exp(-0.5 * l1 / (correlation_length**2))
+    K += jnp.eye(len(y_err)) * (y_err**2)
+    return K
+
+
+@jit
+def jax_rbf_h(x1, x2, sigma, correlation_length):
+    """Compute the RBF kernel with JAX.
+
+    :param x1:              The first set of points. (n_samples,)
+    :param x2:              The second set of points. (n_samples)
+    :param sigma:           The amplitude of the kernel.
+    :param correlation_length: The correlation length of the kernel.
+    :param y_err:           The error of the field. (n_samples)
+    :param white_noise:     The white noise of the field.
+    """
+    l1 = jax_cdist_squared(x1, x2)
+    K = (sigma**2) * jnp.exp(-0.5 * l1 / (correlation_length**2))
+    return K
 
 
 class GPInterpolation(object):
@@ -219,10 +263,16 @@ class GPInterpolation(object):
             return y_predict, None
 
     def jax_return_gp_predict(self, y, X1, X2, kernel, y_err, return_cov=False):
-        HT = kernel.__call__(X2, Y=X1)
+
+        # HT = kernel.__call__(X2, Y=X1)
+        sigma = np.sqrt(np.exp(self.kernel.theta[0]))
+        correlation_length = np.exp(self.kernel.theta[1])
+        HT = jax_rbf_h(X2, X1, sigma, correlation_length)
+
         # if self._alpha is None:
         print("I compute alpha")
-        K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
+        # K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
+        K = jax_rbf_k(X1, sigma, correlation_length, y_err)
         self._alpha = jax_get_alpha(y, K)
         y_predict = jax_get_y_predict(HT, self._alpha)
         if return_cov:
