@@ -106,6 +106,8 @@ class GPInterpolation(object):
         self._X0 = X0
         self._y0 = y0
 
+        self._alpha = None
+
     def _fit(self, kernel, X, y, y_err):
         """Update the Kernel with data.
 
@@ -173,13 +175,14 @@ class GPInterpolation(object):
         :param y_err:  Error of y. (n_samples)
         """
         HT = kernel.__call__(X2, Y=X1)
+        K = None
         if self._alpha is None:
             K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
             factor = (cholesky(K, overwrite_a=True, lower=False), False)
             self._alpha = cho_solve(factor, y, overwrite_b=False)
         y_predict = np.dot(HT, self._alpha.reshape((len(self._alpha), 1))).T[0]
         if return_cov:
-            if self._alpha is not None:
+            if K is None:
                 K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
             fact = cholesky(
                 K, lower=True
