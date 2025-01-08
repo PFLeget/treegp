@@ -18,7 +18,7 @@ from .kernels import eval_kernel
 
 from .meanify import meanify
 
-from .utils import comp_eb
+from .utils import comp_eb, comp_eb_treecorr
 
 __all__ = [
     "__version__",
@@ -32,4 +32,5 @@ __all__ = [
     "eval_kernel",
     "meanify",
     "comp_eb",
+    "comp_eb_treecorr",
 ]
