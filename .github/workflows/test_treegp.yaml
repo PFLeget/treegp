@@ -50,9 +50,8 @@ jobs:
           pytest --cov=treegp --cov-report=xml --cov-fail-under=80
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
-          file: ./tests/coverage.xml
+          files: ./tests/coverage.xml
           fail_ci_if_error: true  # Optional: specify if CI should fail when Codecov upload fails
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
