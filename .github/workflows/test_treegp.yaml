@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [ 3.8, 3.9, "3.10", "3.11" ]
+        python-version: [ 3.8, 3.9, "3.10", "3.11", "3.12" ]
 
     steps:
       - uses: actions/checkout@v2
@@ -26,7 +26,7 @@ jobs:
 
       - name: Setup environment
         run: |
-          sudo apt-get install -y libffi-dev
+          sudo apt-get install -y libffi-dev libbz2-dev
 
       - name: Install dependencies
         run: |
@@ -50,9 +50,8 @@ jobs:
           pytest --cov=treegp --cov-report=xml --cov-fail-under=80
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v5
         with:
-          file: ./tests/coverage.xml
+          files: ./tests/coverage.xml
           fail_ci_if_error: true  # Optional: specify if CI should fail when Codecov upload fails
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
