@@ -27,6 +27,8 @@ def eval_kernel(kernel):
     kernel = sklearn.gaussian_process.kernels.RBF(1)
     """
 
+    namespace = {}
+
     def recurse_subclasses(cls):
         out = []
         for c in cls.__subclasses__():
@@ -36,17 +38,17 @@ def eval_kernel(kernel):
 
     clses = recurse_subclasses(Kernel)
     for cls in clses:
-        module = __import__(cls.__module__, globals(), locals(), cls)
-        execstr = "{0} = module.{0}".format(cls.__name__)
-        exec(execstr, globals(), locals())
+        module = __import__(cls.__module__, globals(), namespace, [cls.__name__])
+        namespace[cls.__name__] = getattr(module, cls.__name__)
 
-    from numpy import array  # noqa: F401
+    from numpy import array  # if needed in the namespace
+
+    # Add array to the namespace if necessary
+    namespace["array"] = array
 
     try:
-        k = eval(kernel)
-    except (KeyboardInterrupt, SystemExit):
-        raise
-    except Exception as e:  # pragma: no cover
+        k = eval(kernel, namespace)
+    except Exception as e:
         raise RuntimeError(
             "Failed to evaluate kernel string {0!r}.  "
             "Original exception: {1}".format(kernel, e)
