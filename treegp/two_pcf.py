@@ -220,6 +220,7 @@ class two_pcf(object):
                         fiting part of the GP. (Boolean)
     :param robust_fit:  Used minuit to fit hyperparameter. Works only
                         anisotropic is True. (Boolean)
+    :param seed:        Seed to use for random number generator.
     """
 
     def __init__(
@@ -233,6 +234,7 @@ class two_pcf(object):
         anisotropic=False,
         robust_fit=False,
         p0=[3000.0, 0.0, 0.0],
+        seed=610639139,
     ):
         self.ndim = np.shape(X)[1]
         if self.ndim not in [1, 2]:
@@ -252,6 +254,14 @@ class two_pcf(object):
         self.anisotropic = anisotropic
         self.robust_fit = robust_fit
         self.p0_robust_fit = p0
+        self.seed = seed
+        self._rng = None
+
+    @property
+    def rng(self):
+        if self._rng is None:
+            self._rng = np.random.default_rng(self.seed)
+        return self._rng
 
     def resample_bootstrap(self):
         """
@@ -259,7 +269,7 @@ class two_pcf(object):
         """
         npsfs = len(self.y)
 
-        ind_object = np.random.randint(0, npsfs - 1, size=npsfs)
+        ind_object = self.rng.integers(0, npsfs - 1, size=npsfs)
         u_ressample = self.X[:, 0][ind_object]
         v_ressample = self.X[:, 1][ind_object]
         y_ressample = self.y[ind_object]
@@ -332,7 +342,8 @@ class two_pcf(object):
 
         :param seed: seed of the random generator.
         """
-        np.random.seed(seed)
+        self.seed = seed
+        self._rng = None
         xi_bootstrap = []
         for i in range(n_bootstrap):
             u, v, y, y_err = self.resample_bootstrap()
