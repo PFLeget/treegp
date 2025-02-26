@@ -134,6 +134,7 @@ def test_hyperparameter_search_2d():
         if opt == "anisotropic":
             try:
                 e_mode, b_mode, logr = treegp.comp_eb(x[:, 0], x[:, 1], y, y)
+                e_mode, b_mode, logr = treegp.comp_eb_treecorr(x[:, 0], x[:, 1], y, y)
             except:
                 raise ValueError("Failed to compute E/B decomposition")
         # test if found hyperparameters are close the true hyperparameters.
