@@ -108,6 +108,7 @@ def comp_eb(u, v, du, dv, **kwargs):
     xie = xiplus - xib
     return xie, xib, logr
 
+
 class compEbTreecorr:
 
     def __init__(self, x, y, dx, dy, rmin=5.0 / 3600.0, rmax=1.5, dlogr=0.05):
@@ -129,7 +130,6 @@ class compEbTreecorr:
         tmp = np.array(ximinus) * dlogr
         integral = np.cumsum(tmp[::-1])[::-1]
         return 0.5 * (xiplus - ximinus) + integral
-
 
     def comp_eb(self):
         self.vcorr()
