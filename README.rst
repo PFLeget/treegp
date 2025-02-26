@@ -57,5 +57,5 @@ installs below):
 Python
 ``````
 
-``treegp`` is regularly tested on Python 3.8, 3.9, 3.10, and 3.11.  It may work in other
+``treegp`` is regularly tested on Python 3.9, 3.10, 3.11, 3.12 and 3.13.  It may work in other
 versions of Python (e.g. pypy), but these are not currently supported.
