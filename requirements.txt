@@ -2,8 +2,7 @@ setuptools>=65.5.1
 numpy>=1.16.5
 scipy
 matplotlib
-
-iminuit>2  # iminuit changed API in v2.0.  We use the 2.x API.
-treecorr>=4.2
+iminuit>2
+treecorr>=5.0
 fitsio>=0.9.12
 scikit-learn>=0.18
