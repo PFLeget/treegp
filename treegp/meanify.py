@@ -108,7 +108,7 @@ class meanify(object):
             wrms = np.zeros_like(average)
         average = average.T
         wrms = wrms.T
-        self._average = average
+        self._average = copy.deepcopy(average)
         self._wrms = wrms
         average = average.reshape(-1)
         wrms = wrms.reshape(-1)
@@ -127,7 +127,6 @@ class meanify(object):
         self._v0 = v0
         self._xedge = xedge
         self._yedge = yedge
-        self._average = average
 
         coords0 = np.array([u0.reshape(-1), v0.reshape(-1)]).T
 
