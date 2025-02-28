@@ -5,6 +5,7 @@
 import numpy as np
 from scipy.stats import binned_statistic_2d
 import fitsio
+import copy
 
 
 class meanify(object):
@@ -97,7 +98,7 @@ class meanify(object):
             )
             wrms = np.sqrt(wvar)
         else:
-            average, u0, v0, bin_target = binned_statistic_2d(
+            average, xedge, yedge, bin_target = binned_statistic_2d(
                 coords[:, 0],
                 coords[:, 1],
                 params,
@@ -107,13 +108,15 @@ class meanify(object):
             wrms = np.zeros_like(average)
         average = average.T
         wrms = wrms.T
-        self._average = average
+        self._average = copy.deepcopy(average)
         self._wrms = wrms
         average = average.reshape(-1)
         wrms = wrms.reshape(-1)
         Filter &= np.isfinite(average).reshape(-1)
         Filter &= np.isfinite(wrms).reshape(-1)
-        params0 = average
+        params0 = copy.deepcopy(average)
+        u0 = copy.deepcopy(xedge)
+        v0 = copy.deepcopy(yedge)
         wrms0 = wrms
 
         # get center of each bin
@@ -122,6 +125,8 @@ class meanify(object):
         u0, v0 = np.meshgrid(u0, v0)
         self._u0 = u0
         self._v0 = v0
+        self._xedge = xedge
+        self._yedge = yedge
 
         coords0 = np.array([u0.reshape(-1), v0.reshape(-1)]).T
 
