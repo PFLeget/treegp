@@ -125,22 +125,25 @@ class robust_2dfit(object):
         :param param: list of non-linear parameters to search.
                       (correlation lenght, e1, and e2).
         """
-        model = self._model_skl(1.0, param[0], param[1], param[2])
-        if model is None:
+        if not np.isfinite(np.sum(param)):
             self.chi2_value = np.inf
         else:
-            model = model[self.mask]
-            F = np.array([model, np.ones_like(model)]).T
-            FWF = np.dot(F.T, self.W).dot(F)
-            Y = self.flat_data[self.mask].reshape((len(model), 1))
-            self.alpha = np.linalg.inv(FWF).dot(np.dot(F.T, self.W).dot(Y))
-            self.alpha[0] = abs(self.alpha[0])
-            self.residuals = self.flat_data[self.mask] - (
-                (self.alpha[0] * model) + self.alpha[1]
-            )
-            self.chi2_value = self.residuals.dot(self.W).dot(
-                self.residuals.reshape((len(model), 1))
-            )
+            model = self._model_skl(1.0, param[0], param[1], param[2])
+            if model is None:
+                self.chi2_value = np.inf
+            else:
+                model = model[self.mask]
+                F = np.array([model, np.ones_like(model)]).T
+                FWF = np.dot(F.T, self.W).dot(F)
+                Y = self.flat_data[self.mask].reshape((len(model), 1))
+                self.alpha = np.linalg.inv(FWF).dot(np.dot(F.T, self.W).dot(Y))
+                self.alpha[0] = abs(self.alpha[0])
+                self.residuals = self.flat_data[self.mask] - (
+                    (self.alpha[0] * model) + self.alpha[1]
+                )
+                self.chi2_value = self.residuals.dot(self.W).dot(
+                    self.residuals.reshape((len(model), 1))
+                )
 
         return self.chi2_value
 
