@@ -16,7 +16,7 @@ from .kernels import VonKarman
 from .kernels import AnisotropicVonKarman
 from .kernels import eval_kernel
 
-from .meanify import meanify
+from .meanify import meanify, MeanifyStream
 
 from .utils import comp_eb, comp_eb_treecorr
 
@@ -31,6 +31,7 @@ __all__ = [
     "AnisotropicVonKarman",
     "eval_kernel",
     "meanify",
+    "MeanifyStream",
     "comp_eb",
     "comp_eb_treecorr",
 ]
