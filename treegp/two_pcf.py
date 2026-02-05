@@ -145,7 +145,7 @@ class robust_2dfit(object):
                     self.residuals.reshape((len(model), 1))
                 )
 
-        return self.chi2_value
+        return self.chi2_value[0]
 
     def _minimize_minuit(self, p0=[3000.0, 0.2, 0.2]):
         """
