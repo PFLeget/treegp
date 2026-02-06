@@ -159,13 +159,13 @@ class meanify(object):
         """
         if np.shape(coord)[1] != 2:
             raise ValueError("meanify is supported only in 2d for the moment.")
-        self.coords.append(coord)
-        self.params.append(param)
+        self.coords.append(coord[np.isfinite(param)])
+        self.params.append(param[np.isfinite(param)])
         if self.stat_used == "weighted":
             if params_err is None:
                 raise ValueError("Need an associated error to params")
             else:
-                self.params_err.append(params_err)
+                self.params_err.append(params_err[np.isfinite(param)])
 
     def meanify(self, lu_min=None, lu_max=None, lv_min=None, lv_max=None):
         """

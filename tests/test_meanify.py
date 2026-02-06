@@ -128,6 +128,7 @@ def test_gpinterp_meanify():
                 "std_pull is > 1. Current value std_pull = %f" % (std_pull)
             )
 
+@timer
 def test_meanifyStream():
 
     # --- SETUP DATA ---
@@ -165,6 +166,6 @@ def test_meanifyStream():
 
 
 if __name__ == "__main__":
-    #test_meanify()
-    #test_gpinterp_meanify()
+    test_meanify()
+    test_gpinterp_meanify()
     test_meanifyStream()
