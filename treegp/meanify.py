@@ -9,64 +9,55 @@ import copy
 
 
 class MeanifyStream(object):
-    """
-    High-performance, low-memory spatial averager. 
-    
-    This class uses an online/streaming algorithm. It pre-allocates the 
-    spatial grid and accumulates statistics on the fly.
-    Complexity: Time O(N), Memory O(1).
-    """
-
-    def __init__(self, bin_spacing=120.0, bounds=(0, 1, 0, 1)):
+    def __init__(self, bin_spacing=120.0, bounds=None):
         """
         :param bin_spacing: Resolution of the grid.
         :param bounds: Tuple (u_min, u_max, v_min, v_max). 
-                       REQUIRED for streaming mode to pre-allocate the grid.
         """
         if bounds is None:
-            raise ValueError("Streaming Meanify requires 'bounds=(u_min, u_max, v_min, v_max)' at initialization.")
+            raise ValueError("Streaming Meanify requires bounds=(u_min, u_max, v_min, v_max)")
         
         self.bin_spacing = float(bin_spacing)
         self.lu_min, self.lu_max, self.lv_min, self.lv_max = bounds
 
-        # 1. Define the grid dimensions immediately
-        self.nbin_u = int((self.lu_max - self.lu_min) / self.bin_spacing)
-        self.nbin_v = int((self.lv_max - self.lv_min) / self.bin_spacing)
+        # --- REPLICATE LEGACY GRID LOGIC EXACTLY ---
+        # Legacy: nbin_u = int((max - min) / spacing) is passed to linspace as num_points
+        n_edges_u = int((self.lu_max - self.lu_min) / self.bin_spacing)
+        n_edges_v = int((self.lv_max - self.lv_min) / self.bin_spacing)
 
-        # 2. Pre-allocate accumulation maps (Y, X) convention for images usually, 
-        # but we stick to (U, V) index order for consistency.
+        # Generate edges exactly like legacy
+        self._xedge = np.linspace(self.lu_min, self.lu_max, n_edges_u)
+        self._yedge = np.linspace(self.lv_min, self.lv_max, n_edges_v)
+
+        # Actual number of bins is edges - 1
+        self.nbin_u = len(self._xedge) - 1
+        self.nbin_v = len(self._yedge) - 1
+
+        # Calculate EFFECTIVE spacing for arithmetic binning
+        # (This is crucial: linspace spacing != input bin_spacing due to integer rounding)
+        self.dx = self._xedge[1] - self._xedge[0]
+        self.dy = self._yedge[1] - self._yedge[0]
+
+        # Accumulators (u, v) -> (x, y) order
         shape = (self.nbin_u, self.nbin_v)
-        
-        # Accumulators
-        self.grid_sum = np.zeros(shape, dtype=np.float64)    # Sum of values (Sigma x)
-        self.grid_sum_sq = np.zeros(shape, dtype=np.float64) # Sum of squares (Sigma x^2)
-        self.grid_count = np.zeros(shape, dtype=np.int64)    # Number of points (N)
-
-        # Pre-compute grid centers for later export
-        u_edges = np.linspace(self.lu_min, self.lu_max, self.nbin_u + 1)
-        v_edges = np.linspace(self.lv_min, self.lv_max, self.nbin_v + 1)
-        
-        self.u_centers = u_edges[:-1] + (u_edges[1] - u_edges[0]) / 2.0
-        self.v_centers = v_edges[:-1] + (v_edges[1] - v_edges[0]) / 2.0
-        
-        # We store these for consistency with original format
-        self._xedge = u_edges
-        self._yedge = v_edges
+        self.grid_sum = np.zeros(shape, dtype=np.float64)
+        self.grid_sum_sq = np.zeros(shape, dtype=np.float64)
+        self.grid_count = np.zeros(shape, dtype=np.int64)
 
     def add_field(self, coord, param):
-        """
-        Add new data to the accumulator. 
-        Does NOT store raw data in memory.
-        
-        :param coord: Array of coordinates (N, 2)
-        :param param: Array of values (N,)
-        """
-        # 1. vectorized calculation of bin indices
-        # We subtract min and divide by spacing to get integer index
-        u_idx = np.floor((coord[:, 0] - self.lu_min) / self.bin_spacing).astype(int)
-        v_idx = np.floor((coord[:, 1] - self.lv_min) / self.bin_spacing).astype(int)
+        # 1. Arithmetic Binning using EFFECTIVE spacing
+        # We use a small epsilon for stability, but rely primarily on clamping
+        u_idx = ((coord[:, 0] - self.lu_min) / self.dx).astype(int)
+        v_idx = ((coord[:, 1] - self.lv_min) / self.dy).astype(int)
 
-        # 2. Filter points that are outside the pre-defined bounds
+        # 2. Handle Inclusive Right Edge (Match binned_statistic behavior)
+        # If a point is exactly on the max edge, it belongs to the last bin, not the next one.
+        on_u_edge = (coord[:, 0] == self.lu_max)
+        on_v_edge = (coord[:, 1] == self.lv_max)
+        u_idx[on_u_edge] = self.nbin_u - 1
+        v_idx[on_v_edge] = self.nbin_v - 1
+
+        # 3. Filter valid points
         valid_mask = (
             (u_idx >= 0) & (u_idx < self.nbin_u) & 
             (v_idx >= 0) & (v_idx < self.nbin_v) &
@@ -80,58 +71,43 @@ class MeanifyStream(object):
         v_idx = v_idx[valid_mask]
         p = param[valid_mask]
 
-        # 3. Accumulate statistics using unbuffered addition
-        # This handles cases where multiple points fall in the same bin within one batch
+        # 4. Accumulate
         np.add.at(self.grid_sum, (u_idx, v_idx), p)
         np.add.at(self.grid_sum_sq, (u_idx, v_idx), p**2)
         np.add.at(self.grid_count, (u_idx, v_idx), 1)
 
     def meanify(self):
-        """
-        Finalize the statistics. 
-        Calculates Mean and RMS from the accumulated sums.
-        """
-        # Avoid division by zero
         with np.errstate(divide='ignore', invalid='ignore'):
-            # 1. Calculate stats in (N_u, N_v) shape
             raw_average = self.grid_sum / self.grid_count
-            
             mean_sq = self.grid_sum_sq / self.grid_count
             variance = mean_sq - (raw_average ** 2)
-            variance = np.maximum(variance, 0)
-            raw_wrms = np.sqrt(variance)
+            raw_wrms = np.sqrt(np.maximum(variance, 0))
 
-        # 2. MATCH LEGACY: Transpose to (N_v, N_u)
-        # The legacy code does 'average = average.T', so we must too.
+        # --- MATCH LEGACY OUTPUT FORMAT ---
+        
+        # 1. Transpose: Legacy output is (n_v, n_u)
         self._average = raw_average.T
         self._wrms = raw_wrms.T
         
-        # 3. MATCH LEGACY: Meshgrid
-        # Legacy uses default np.meshgrid (Cartesian 'xy' indexing), which produces (N_v, N_u)
-        # My previous code used 'ij' (Matrix) indexing. We switch to default to match legacy.
-        u_grid, v_grid = np.meshgrid(self.u_centers, self.v_centers) # Default is indexing='xy'
+        # 2. Centers
+        u_centers = self._xedge[:-1] + self.dx / 2.0
+        v_centers = self._yedge[:-1] + self.dy / 2.0
         
-        self._u0 = u_grid
-        self._v0 = v_grid
+        # 3. Meshgrid (Legacy uses default 'xy' indexing -> returns (nv, nu))
+        self._u0, self._v0 = np.meshgrid(u_centers, v_centers)
 
-        # 4. Filter for valid bins
-        # Note: self.grid_count is still (N_u, N_v), so we transpose it to match _average
+        # 4. Sparse Output
         count_T = self.grid_count.T
         valid_bins = (count_T > 0) & np.isfinite(self._average)
 
-        # Flatten sparse representation
         self.coords0 = np.column_stack((
-            u_grid[valid_bins], 
-            v_grid[valid_bins]
+            self._u0[valid_bins], 
+            self._v0[valid_bins]
         ))
         self.params0 = self._average[valid_bins]
         self.wrms0 = self._wrms[valid_bins]
 
-    def save_results(self, name_output="mean_gp_stream.fits"):
-        """
-        Write output mean function to FITS.
-        Matches the structure of the original class.
-        """
+    def save_results(self, name_output="mean_gp.fits"):
         dtypes = [
             ("COORDS0", self.coords0.dtype, self.coords0.shape),
             ("PARAMS0", self.params0.dtype, self.params0.shape),
@@ -142,7 +118,6 @@ class MeanifyStream(object):
             ("_V0", self._v0.dtype, self._v0.shape),
         ]
         data = np.empty(1, dtype=dtypes)
-
         data["COORDS0"] = self.coords0
         data["PARAMS0"] = self.params0
         data["WRMS0"] = self.wrms0
@@ -153,7 +128,6 @@ class MeanifyStream(object):
 
         with fitsio.FITS(name_output, "rw", clobber=True) as f:
             f.write_table(data, extname="average_solution")
-
 
 class meanify(object):
     """Take data, build a spatial average, and write output average.
