@@ -129,43 +129,96 @@ def test_gpinterp_meanify():
             )
 
 @timer
-def test_meanifyStream():
+def test_meanify_streaming():
+    """Test that streaming mode (with bounds) matches legacy mode."""
 
     # --- SETUP DATA ---
     np.random.seed(42)
     N = 20000
     bounds = (0, 1000, 0, 1000)
-    spacing = 53.7 # Arbitrary spacing to test rounding logic
-    
+    spacing = 53.7  # Arbitrary spacing to test rounding logic
+
     # Random data + edge cases
     coords = np.random.uniform(0, 1000, size=(N, 2))
-    edge_cases = np.array([[0,0], [1000,1000], [500,1000], [1000,500]])
+    edge_cases = np.array([[0, 0], [1000, 1000], [500, 1000], [1000, 500]])
     coords = np.vstack([coords, edge_cases])
     params = np.random.normal(100, 10, size=len(coords))
 
-    # --- RUN LEGACY ---
-    leg = treegp.meanify(bin_spacing=spacing, statistics="mean")
-    leg.add_field(coords, params)
-    leg.meanify(lu_min=bounds[0], lu_max=bounds[1], lv_min=bounds[2], lv_max=bounds[3])
+    # --- RUN LEGACY (no bounds -> uses scipy binned_statistic) ---
+    legacy = treegp.meanify(bin_spacing=spacing, statistics="mean")
+    legacy.add_field(coords, params)
+    legacy.meanify(lu_min=bounds[0], lu_max=bounds[1], lv_min=bounds[2], lv_max=bounds[3])
+    assert not legacy._use_streaming, "Legacy mode should not use streaming"
 
-    # --- RUN STREAM ---
-    stream = treegp.MeanifyStream(bin_spacing=spacing, bounds=bounds)
+    # --- RUN STREAMING (with bounds -> uses O(1) accumulators) ---
+    stream = treegp.meanify(bin_spacing=spacing, statistics="mean", bounds=bounds)
     stream.add_field(coords, params)
     stream.meanify()
+    assert stream._use_streaming, "Streaming mode should use streaming"
 
     # --- ASSERTIONS ---
-    
+
     # 1. Check Shapes
-    assert leg._xedge.shape == stream._xedge.shape, f"X-Edge Shape mismatch: {leg._xedge.shape} vs {stream._xedge.shape}"
-    assert leg._yedge.shape == stream._yedge.shape, f"Y-Edge Shape mismatch: {leg._yedge.shape} vs {stream._yedge.shape}"
-    assert leg._average.shape == stream._average.shape, f"Average Map Shape mismatch: {leg._average.shape} vs {stream._average.shape}"
+    assert legacy._xedge.shape == stream._xedge.shape, (
+        f"X-Edge Shape mismatch: {legacy._xedge.shape} vs {stream._xedge.shape}"
+    )
+    assert legacy._yedge.shape == stream._yedge.shape, (
+        f"Y-Edge Shape mismatch: {legacy._yedge.shape} vs {stream._yedge.shape}"
+    )
+    assert legacy._average.shape == stream._average.shape, (
+        f"Average Map Shape mismatch: {legacy._average.shape} vs {stream._average.shape}"
+    )
 
     # 2. Check Edges (Strict Equality)
-    np.testing.assert_allclose(leg._xedge, stream._xedge, rtol=1e-12, err_msg="X-Edge values do not match")
-    np.testing.assert_allclose(leg._yedge, stream._yedge, rtol=1e-12, err_msg="Y-Edge values do not match")
+    np.testing.assert_allclose(
+        legacy._xedge, stream._xedge, rtol=1e-12, err_msg="X-Edge values do not match"
+    )
+    np.testing.assert_allclose(
+        legacy._yedge, stream._yedge, rtol=1e-12, err_msg="Y-Edge values do not match"
+    )
+
+    # 3. Check computed values match
+    np.testing.assert_allclose(
+        legacy.params0, stream.params0, rtol=1e-10, err_msg="params0 values do not match"
+    )
+    np.testing.assert_allclose(
+        legacy.coords0, stream.coords0, rtol=1e-10, err_msg="coords0 values do not match"
+    )
+
+
+@timer
+def test_meanify_median_uses_legacy():
+    """Test that median statistics always uses legacy mode (even with bounds)."""
+    np.random.seed(42)
+    coords = np.random.uniform(0, 1000, size=(1000, 2))
+    params = np.random.normal(100, 10, size=1000)
+
+    # Median with bounds should still use legacy (streaming only supports mean)
+    m = treegp.meanify(bin_spacing=100.0, statistics="median", bounds=(0, 1000, 0, 1000))
+    assert not m._use_streaming, "Median should use legacy mode"
+    m.add_field(coords, params)
+    m.meanify()
+    assert m.params0 is not None
+
+
+@timer
+def test_meanify_backward_compat():
+    """Test MeanifyStream alias for backward compatibility."""
+    np.random.seed(42)
+    coords = np.random.uniform(0, 1000, size=(1000, 2))
+    params = np.random.normal(100, 10, size=1000)
+
+    # MeanifyStream is now an alias - should work with bounds
+    stream = treegp.MeanifyStream(bin_spacing=100.0, bounds=(0, 1000, 0, 1000))
+    stream.add_field(coords, params)
+    stream.meanify()
+    assert stream._use_streaming, "MeanifyStream should use streaming mode"
+    assert stream.params0 is not None
 
 
 if __name__ == "__main__":
     test_meanify()
     test_gpinterp_meanify()
-    test_meanifyStream()
+    test_meanify_streaming()
+    test_meanify_median_uses_legacy()
+    test_meanify_backward_compat()

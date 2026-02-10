@@ -46,6 +46,7 @@ dependencies = [
     "treecorr>=4.2",
     "fitsio>=0.9.12",
     "scikit-learn>=0.18",
+    "healsparse",
 ]
 if sys.version >= "3.0":
     dependencies += ["iminuit>2"]

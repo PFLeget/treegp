@@ -8,20 +8,41 @@ import fitsio
 import copy
 
 
-class MeanifyStream(object):
-    def __init__(self, bin_spacing=120.0, bounds=None):
-        """
-        :param bin_spacing: Resolution of the grid.
-        :param bounds: Tuple (u_min, u_max, v_min, v_max). 
-        """
-        if bounds is None:
-            raise ValueError("Streaming Meanify requires bounds=(u_min, u_max, v_min, v_max)")
-        
-        self.bin_spacing = float(bin_spacing)
+class meanify(object):
+    """Take data, build a spatial average, and write output average.
+
+    :param bin_spacing: Bin_size, resolution on the mean function. (default=120.)
+    :param statistics:  Statistics used to compute the mean. (default=mean)
+                        Supported: "mean", "median", "weighted"
+    :param bounds:      Optional tuple (u_min, u_max, v_min, v_max).
+                        When provided with statistics="mean", enables O(1) memory
+                        streaming mode using accumulators instead of storing all data.
+    """
+
+    def __init__(self, bin_spacing=120.0, statistics="mean", bounds=None):
+        self.bin_spacing = bin_spacing
+
+        if statistics not in ["mean", "median", "weighted"]:
+            raise ValueError(
+                "%s is not a supported statistic (only mean, weighted, and median are currently supported)"
+                % (statistics)
+            )
+        self.stat_used = statistics
+
+        # Determine if we can use streaming mode
+        self._use_streaming = (statistics == "mean") and (bounds is not None)
+
+        if self._use_streaming:
+            self._init_streaming(bounds)
+        else:
+            self._init_legacy()
+
+    def _init_streaming(self, bounds):
+        """Initialize streaming accumulators for O(1) memory usage."""
+        self.bin_spacing = float(self.bin_spacing)
         self.lu_min, self.lu_max, self.lv_min, self.lv_max = bounds
 
-        # --- REPLICATE LEGACY GRID LOGIC EXACTLY ---
-        # Legacy: nbin_u = int((max - min) / spacing) is passed to linspace as num_points
+        # Replicate legacy grid logic exactly
         n_edges_u = int((self.lu_max - self.lu_min) / self.bin_spacing)
         n_edges_v = int((self.lv_max - self.lv_min) / self.bin_spacing)
 
@@ -33,119 +54,18 @@ class MeanifyStream(object):
         self.nbin_u = len(self._xedge) - 1
         self.nbin_v = len(self._yedge) - 1
 
-        # Calculate EFFECTIVE spacing for arithmetic binning
-        # (This is crucial: linspace spacing != input bin_spacing due to integer rounding)
+        # Calculate effective spacing for arithmetic binning
         self.dx = self._xedge[1] - self._xedge[0]
         self.dy = self._yedge[1] - self._yedge[0]
 
         # Accumulators (u, v) -> (x, y) order
         shape = (self.nbin_u, self.nbin_v)
-        self.grid_sum = np.zeros(shape, dtype=np.float64)
-        self.grid_sum_sq = np.zeros(shape, dtype=np.float64)
-        self.grid_count = np.zeros(shape, dtype=np.int64)
+        self._grid_sum = np.zeros(shape, dtype=np.float64)
+        self._grid_sum_sq = np.zeros(shape, dtype=np.float64)
+        self._grid_count = np.zeros(shape, dtype=np.int64)
 
-    def add_field(self, coord, param):
-        # 1. Arithmetic Binning using EFFECTIVE spacing
-        # We use a small epsilon for stability, but rely primarily on clamping
-        u_idx = ((coord[:, 0] - self.lu_min) / self.dx).astype(int)
-        v_idx = ((coord[:, 1] - self.lv_min) / self.dy).astype(int)
-
-        # 2. Handle Inclusive Right Edge (Match binned_statistic behavior)
-        # If a point is exactly on the max edge, it belongs to the last bin, not the next one.
-        on_u_edge = (coord[:, 0] == self.lu_max)
-        on_v_edge = (coord[:, 1] == self.lv_max)
-        u_idx[on_u_edge] = self.nbin_u - 1
-        v_idx[on_v_edge] = self.nbin_v - 1
-
-        # 3. Filter valid points
-        valid_mask = (
-            (u_idx >= 0) & (u_idx < self.nbin_u) & 
-            (v_idx >= 0) & (v_idx < self.nbin_v) &
-            np.isfinite(param)
-        )
-
-        if not np.any(valid_mask):
-            return
-
-        u_idx = u_idx[valid_mask]
-        v_idx = v_idx[valid_mask]
-        p = param[valid_mask]
-
-        # 4. Accumulate
-        np.add.at(self.grid_sum, (u_idx, v_idx), p)
-        np.add.at(self.grid_sum_sq, (u_idx, v_idx), p**2)
-        np.add.at(self.grid_count, (u_idx, v_idx), 1)
-
-    def meanify(self):
-        with np.errstate(divide='ignore', invalid='ignore'):
-            raw_average = self.grid_sum / self.grid_count
-            mean_sq = self.grid_sum_sq / self.grid_count
-            variance = mean_sq - (raw_average ** 2)
-            raw_wrms = np.sqrt(np.maximum(variance, 0))
-
-        # --- MATCH LEGACY OUTPUT FORMAT ---
-        
-        # 1. Transpose: Legacy output is (n_v, n_u)
-        self._average = raw_average.T
-        self._wrms = raw_wrms.T
-        
-        # 2. Centers
-        u_centers = self._xedge[:-1] + self.dx / 2.0
-        v_centers = self._yedge[:-1] + self.dy / 2.0
-        
-        # 3. Meshgrid (Legacy uses default 'xy' indexing -> returns (nv, nu))
-        self._u0, self._v0 = np.meshgrid(u_centers, v_centers)
-
-        # 4. Sparse Output
-        count_T = self.grid_count.T
-        valid_bins = (count_T > 0) & np.isfinite(self._average)
-
-        self.coords0 = np.column_stack((
-            self._u0[valid_bins], 
-            self._v0[valid_bins]
-        ))
-        self.params0 = self._average[valid_bins]
-        self.wrms0 = self._wrms[valid_bins]
-
-    def save_results(self, name_output="mean_gp.fits"):
-        dtypes = [
-            ("COORDS0", self.coords0.dtype, self.coords0.shape),
-            ("PARAMS0", self.params0.dtype, self.params0.shape),
-            ("WRMS0", self.wrms0.dtype, self.wrms0.shape),
-            ("_AVERAGE", self._average.dtype, self._average.shape),
-            ("_WRMS", self._wrms.dtype, self._wrms.shape),
-            ("_U0", self._u0.dtype, self._u0.shape),
-            ("_V0", self._v0.dtype, self._v0.shape),
-        ]
-        data = np.empty(1, dtype=dtypes)
-        data["COORDS0"] = self.coords0
-        data["PARAMS0"] = self.params0
-        data["WRMS0"] = self.wrms0
-        data["_AVERAGE"] = self._average
-        data["_WRMS"] = self._wrms
-        data["_U0"] = self._u0
-        data["_V0"] = self._v0
-
-        with fitsio.FITS(name_output, "rw", clobber=True) as f:
-            f.write_table(data, extname="average_solution")
-
-class meanify(object):
-    """Take data, build a spatial average, and write output average.
-
-    :param bin_spacing: Bin_size, resolution on the mean function. (default=120.)
-    :param statistics:  Statisitics used to compute the mean. (default=mean)
-    """
-
-    def __init__(self, bin_spacing=120.0, statistics="mean"):
-        self.bin_spacing = bin_spacing
-
-        if statistics not in ["mean", "median", "weighted"]:
-            raise ValueError(
-                "%s is not a suported statistic (only mean, weighted, and median are currently suported)"
-                % (statistics)
-            )
-        self.stat_used = statistics  # default statistics: arithmetic mean over each bin
-
+    def _init_legacy(self):
+        """Initialize legacy mode with data lists."""
         self.coords = []
         self.params = []
         self.params_err = []
@@ -156,9 +76,51 @@ class meanify(object):
 
         :param coord: Array of coordinate of the parameter.
         :param param: Array of parameter.
+        :param params_err: Array of parameter errors (required for weighted statistics).
         """
         if np.shape(coord)[1] != 2:
             raise ValueError("meanify is supported only in 2d for the moment.")
+
+        if self._use_streaming:
+            self._add_field_streaming(coord, param)
+        else:
+            self._add_field_legacy(coord, param, params_err)
+
+    def _add_field_streaming(self, coord, param):
+        """Add data using streaming accumulators."""
+        # Arithmetic binning using effective spacing
+        u_idx = ((coord[:, 0] - self.lu_min) / self.dx).astype(int)
+        v_idx = ((coord[:, 1] - self.lv_min) / self.dy).astype(int)
+
+        # Handle inclusive right edge (match binned_statistic behavior)
+        on_u_edge = coord[:, 0] == self.lu_max
+        on_v_edge = coord[:, 1] == self.lv_max
+        u_idx[on_u_edge] = self.nbin_u - 1
+        v_idx[on_v_edge] = self.nbin_v - 1
+
+        # Filter valid points
+        valid_mask = (
+            (u_idx >= 0)
+            & (u_idx < self.nbin_u)
+            & (v_idx >= 0)
+            & (v_idx < self.nbin_v)
+            & np.isfinite(param)
+        )
+
+        if not np.any(valid_mask):
+            return
+
+        u_idx = u_idx[valid_mask]
+        v_idx = v_idx[valid_mask]
+        p = param[valid_mask]
+
+        # Accumulate
+        np.add.at(self._grid_sum, (u_idx, v_idx), p)
+        np.add.at(self._grid_sum_sq, (u_idx, v_idx), p**2)
+        np.add.at(self._grid_count, (u_idx, v_idx), 1)
+
+    def _add_field_legacy(self, coord, param, params_err):
+        """Add data to lists for legacy processing."""
         self.coords.append(coord[np.isfinite(param)])
         self.params.append(param[np.isfinite(param)])
         if self.stat_used == "weighted":
@@ -170,7 +132,46 @@ class meanify(object):
     def meanify(self, lu_min=None, lu_max=None, lv_min=None, lv_max=None):
         """
         Compute the mean function.
+
+        :param lu_min, lu_max, lv_min, lv_max: Bounds for the grid.
+            In streaming mode, these are ignored (bounds set at init).
+            In legacy mode, if not provided, computed from data.
         """
+        if self._use_streaming:
+            self._meanify_streaming()
+        else:
+            self._meanify_legacy(lu_min, lu_max, lv_min, lv_max)
+
+    def _meanify_streaming(self):
+        """Compute mean using streaming accumulators."""
+        with np.errstate(divide="ignore", invalid="ignore"):
+            raw_average = self._grid_sum / self._grid_count
+            mean_sq = self._grid_sum_sq / self._grid_count
+            variance = mean_sq - (raw_average**2)
+            raw_wrms = np.sqrt(np.maximum(variance, 0))
+
+        # Match legacy output format
+        # Transpose: legacy output is (n_v, n_u)
+        self._average = raw_average.T
+        self._wrms = raw_wrms.T
+
+        # Centers
+        u_centers = self._xedge[:-1] + self.dx / 2.0
+        v_centers = self._yedge[:-1] + self.dy / 2.0
+
+        # Meshgrid (legacy uses default 'xy' indexing -> returns (nv, nu))
+        self._u0, self._v0 = np.meshgrid(u_centers, v_centers)
+
+        # Sparse output
+        count_T = self._grid_count.T
+        valid_bins = (count_T > 0) & np.isfinite(self._average)
+
+        self.coords0 = np.column_stack((self._u0[valid_bins], self._v0[valid_bins]))
+        self.params0 = self._average[valid_bins]
+        self.wrms0 = self._wrms[valid_bins]
+
+    def _meanify_legacy(self, lu_min, lu_max, lv_min, lv_max):
+        """Compute mean using legacy scipy-based approach."""
         params = np.concatenate(self.params)
         coords = np.concatenate(self.coords, axis=0)
         if self.stat_used == "weighted":
@@ -284,3 +285,7 @@ class meanify(object):
 
         with fitsio.FITS(name_output, "rw", clobber=True) as f:
             f.write_table(data, extname="average_solution")
+
+
+# Backward compatibility alias
+MeanifyStream = meanify
