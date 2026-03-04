@@ -126,11 +126,11 @@ class robust_2dfit(object):
                       (correlation lenght, e1, and e2).
         """
         if not np.isfinite(np.sum(param)):
-            self.chi2_value = np.inf
+            self.chi2_value = [np.inf]
         else:
             model = self._model_skl(1.0, param[0], param[1], param[2])
             if model is None:
-                self.chi2_value = np.inf
+                self.chi2_value = [np.inf]
             else:
                 model = model[self.mask]
                 F = np.array([model, np.ones_like(model)]).T
