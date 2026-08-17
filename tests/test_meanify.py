@@ -128,6 +128,7 @@ def test_gpinterp_meanify():
                 "std_pull is > 1. Current value std_pull = %f" % (std_pull)
             )
 
+
 @timer
 def test_meanify_streaming():
     """Test that streaming mode (with bounds) matches legacy mode."""
@@ -147,7 +148,9 @@ def test_meanify_streaming():
     # --- RUN LEGACY (no bounds -> uses scipy binned_statistic) ---
     legacy = treegp.meanify(bin_spacing=spacing, statistics="mean")
     legacy.add_field(coords, params)
-    legacy.meanify(lu_min=bounds[0], lu_max=bounds[1], lv_min=bounds[2], lv_max=bounds[3])
+    legacy.meanify(
+        lu_min=bounds[0], lu_max=bounds[1], lv_min=bounds[2], lv_max=bounds[3]
+    )
     assert not legacy._use_streaming, "Legacy mode should not use streaming"
 
     # --- RUN STREAMING (with bounds -> uses O(1) accumulators) ---
@@ -159,15 +162,15 @@ def test_meanify_streaming():
     # --- ASSERTIONS ---
 
     # 1. Check Shapes
-    assert legacy._xedge.shape == stream._xedge.shape, (
-        f"X-Edge Shape mismatch: {legacy._xedge.shape} vs {stream._xedge.shape}"
-    )
-    assert legacy._yedge.shape == stream._yedge.shape, (
-        f"Y-Edge Shape mismatch: {legacy._yedge.shape} vs {stream._yedge.shape}"
-    )
-    assert legacy._average.shape == stream._average.shape, (
-        f"Average Map Shape mismatch: {legacy._average.shape} vs {stream._average.shape}"
-    )
+    assert (
+        legacy._xedge.shape == stream._xedge.shape
+    ), f"X-Edge Shape mismatch: {legacy._xedge.shape} vs {stream._xedge.shape}"
+    assert (
+        legacy._yedge.shape == stream._yedge.shape
+    ), f"Y-Edge Shape mismatch: {legacy._yedge.shape} vs {stream._yedge.shape}"
+    assert (
+        legacy._average.shape == stream._average.shape
+    ), f"Average Map Shape mismatch: {legacy._average.shape} vs {stream._average.shape}"
 
     # 2. Check Edges (Strict Equality)
     np.testing.assert_allclose(
@@ -179,10 +182,16 @@ def test_meanify_streaming():
 
     # 3. Check computed values match
     np.testing.assert_allclose(
-        legacy.params0, stream.params0, rtol=1e-10, err_msg="params0 values do not match"
+        legacy.params0,
+        stream.params0,
+        rtol=1e-10,
+        err_msg="params0 values do not match",
     )
     np.testing.assert_allclose(
-        legacy.coords0, stream.coords0, rtol=1e-10, err_msg="coords0 values do not match"
+        legacy.coords0,
+        stream.coords0,
+        rtol=1e-10,
+        err_msg="coords0 values do not match",
     )
 
 
@@ -194,7 +203,9 @@ def test_meanify_median_uses_legacy():
     params = np.random.normal(100, 10, size=1000)
 
     # Median with bounds should still use legacy (streaming only supports mean)
-    m = treegp.meanify(bin_spacing=100.0, statistics="median", bounds=(0, 1000, 0, 1000))
+    m = treegp.meanify(
+        bin_spacing=100.0, statistics="median", bounds=(0, 1000, 0, 1000)
+    )
     assert not m._use_streaming, "Median should use legacy mode"
     m.add_field(coords, params)
     m.meanify()

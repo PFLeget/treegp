@@ -97,9 +97,7 @@ class meanify_healpix:
 
         # Sum values per pixel
         pixel_sums = np.bincount(inverse, weights=p, minlength=len(unique_pixels))
-        pixel_sum_sqs = np.bincount(
-            inverse, weights=p**2, minlength=len(unique_pixels)
-        )
+        pixel_sum_sqs = np.bincount(inverse, weights=p**2, minlength=len(unique_pixels))
         pixel_counts = np.bincount(inverse, minlength=len(unique_pixels))
 
         # Update healsparse maps
