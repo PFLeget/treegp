@@ -83,7 +83,7 @@ def test_gpinterp_meanify():
     kernel_skl = treegp.eval_kernel(kernel)
 
     for n, opt in enumerate(optimizer):
-        x, y, y_err = make_2d_grf(kernel_skl, noise=noise, seed=42, npoints=npoints[n])
+        x, y, y_err = make_2d_grf(kernel_skl, noise=noise, seed=44, npoints=npoints[n])
         # add mean function
         coords0, y0 = make_average(coord=x, gp=False)
         y += y0
