@@ -20,12 +20,14 @@ Overview
 ``treegp`` has some special features compared to other available Gaussian Processes codes:
 
 *   Hyperparameters estimation will scale in O(N log(N)) with the the 2-points correlation function estimation compared to O(N^3) with the classical maximum likelihood.
-    
+
 *   Gaussian process interpolation can be performed around a mean function
-    
+
 *   A tool is provided to compute the mean function (``meanify``)
 
-``treegp`` was originally developed for Point Spread Function interpolation within `Piff <https://github.com/rmjarvis/Piff>`_. There is a specific article that describes the math used in ``treegp`` in the context of modelling astrometric shifts of the Subaru Telescope due to atmospheric turbulences. This article can be found 
+*   The measured anisotropic 2D 2-points correlation function can be used directly as the kernel, without fitting any hyperparameters (``optimizer="empirical-2pcf"``), implementing `Gomes et al. (2025) <https://doi.org/10.3847/1538-3881/ae1a7b>`_. The other optimizers (``"two-pcf"``, ``"anisotropic"``) implement `Léget et al. (2021) <https://arxiv.org/abs/2103.09881>`_.
+
+``treegp`` was originally developed for Point Spread Function interpolation within `Piff <https://github.com/rmjarvis/Piff>`_. There is a specific article that describes the math used in ``treegp`` in the context of modelling astrometric shifts of the Subaru Telescope due to atmospheric turbulences. This article can be found
 `here <https://arxiv.org/abs/2103.09881>`_.
 
 

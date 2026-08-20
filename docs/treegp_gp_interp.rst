@@ -118,6 +118,37 @@ To do the gaussian process interpolation with ``treegp`` it follow this API:
 .. image:: fitted.png
 
 
+Using the measured 2-points correlation function as the kernel
+==============================================================
+
+Instead of fitting the hyperparameters of a parametric kernel on the
+measured 2-points correlation function (`Léget et al 2021
+<https://doi.org/10.1051/0004-6361/202140463>`_), the measured anisotropic 2D
+2-points correlation function can be used directly as the kernel, following
+`Gomes et al 2025 <https://doi.org/10.3847/1538-3881/ae1a7b>`_. The measured
+correlation function is cleaned by apodization and thresholding of its
+Fourier power spectrum, tabulated on a grid, and interpolated at the pair
+separations. No hyperparameters are fitted, so the ``kernel`` argument is
+ignored; the grid is controlled by ``max_sep`` (half width) and
+``pixel_size``:
+
+.. code:: ipython3
+
+    gp = treegp.GPInterpolation(
+                optimizer="empirical-2pcf",
+                normalize=True,
+                max_sep=6.0,
+                pixel_size=0.5,
+            )
+    gp.initialize(x, y, y_err=y_err)
+    # measure, clean, and tabulate the 2-points correlation function
+    gp.solve()
+    y_test, y_test_cov = gp.predict(x_test, return_cov=True)
+
+    # measured and cleaned correlation functions can be inspected with:
+    xi, xi_clean, distance, pixel_size = gp.return_empirical_2pcf()
+
+
 
 
 

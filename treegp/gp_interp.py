@@ -7,9 +7,21 @@ import numpy as np
 import copy
 
 from .kernels import eval_kernel
+from .kernels import EmpiricalCorrelationKernel
 
 from sklearn.neighbors import KNeighborsRegressor
 from scipy.linalg import cholesky, cho_solve
+
+
+def _kernel_contains(kernel, kernel_class):
+    """Return whether the given (possibly composite) sklearn kernel is,
+    or contains, an instance of kernel_class."""
+    if isinstance(kernel, kernel_class):
+        return True
+    return any(
+        isinstance(param, kernel_class)
+        for param in kernel.get_params(deep=True).values()
+    )
 
 
 class GPInterpolation(object):
@@ -22,12 +34,30 @@ class GPInterpolation(object):
                          sklearn.gaussian_process.kernels.Kernel object.  The reprs of
                          sklearn.gaussian_process.kernels will work, as well as the repr of a
                          custom treegp VonKarman object.  [default: 'RBF(1)']
-    :param optimizer:    Indicates which techniques to use for optimizing the kernel. Three options
+    :param optimizer:    Indicates which techniques to use for optimizing the kernel. Five options
                          are available. "none" does not optimize hyperparameters and used the one
                          given in the kernel. "two-pcf" optimize the kernel on the 1d 2-point
                          correlation function estimate by treecorr. "anisotropic" optimize the kernel
                          on the 2d 2-point correlation function estimate by treecorr.
+                         "two-pcf" and "anisotropic" implement Leget et al. 2021
+                         (A&A 650, A81, arXiv:2103.09881).
                          "log-likelihood" used the classical maximum likelihood method.
+                         "empirical-2pcf" implements Gomes et al. 2025 (AJ 170:361,
+                         doi:10.3847/1538-3881/ae1a7b): the measured 2d 2-point correlation
+                         function, cleaned by apodization and thresholding of its Fourier
+                         power spectrum, is used directly as a tabulated kernel; no
+                         hyperparameters are fitted: the kernel argument must be left to
+                         its default (an error is raised otherwise), and min_sep and
+                         nbins are ignored (the grid is controlled by max_sep and
+                         pixel_size). Conversely, an EmpiricalCorrelationKernel has no
+                         hyperparameters, so it is rejected by the fitting optimizers
+                         and can only be used with "empirical-2pcf" or "none".
+                         As the tabulated kernel is not guaranteed to be
+                         positive semi-definite between arbitrary points, the negative
+                         eigenvalues of the covariance matrix are clipped to zero
+                         (equivalent to the singular value clipping of Gomes et al. 2025).
+                         If the Cholesky decomposition still fails with a LinAlgError,
+                         increase white_noise.
     :param normalize:    Whether to normalize the interpolation parameters to have a mean of 0.
                          Normally, the parameters being interpolated are not mean 0, so you would
                          want this to be True, but if your parameters have an a priori mean of 0,
@@ -49,6 +79,16 @@ class GPInterpolation(object):
     :param average_fits: A fits file that have the spatial average functions of the interpolated parameter
                          build in it. Build using meanify output across different
                          exposures. See meanify documentation. [default: None]
+    :param pixel_size:   Pixel size of the 2d correlation function grid used by the
+                         "empirical-2pcf" optimizer, in the same units as the coordinates
+                         of the field. Computed automatically (twice the mean separation
+                         between points) if it is not given. [default: None]
+    :param power_threshold: Signal-to-noise threshold below which Fourier modes of the
+                         measured 2-point correlation function are set to zero. Used only
+                         by the "empirical-2pcf" optimizer. [default: 2.5]
+    :param apodize:      Whether to apodize the measured 2-point correlation function with
+                         a Blackman-Harris window before taking its Fourier transform.
+                         Used only by the "empirical-2pcf" optimizer. [default: True]
     """
 
     def __init__(
@@ -64,6 +104,9 @@ class GPInterpolation(object):
         nbins=20,
         min_sep=None,
         max_sep=None,
+        pixel_size=None,
+        power_threshold=2.5,
+        apodize=True,
     ):
         self.normalize = normalize
         self.optimizer = optimizer
@@ -72,6 +115,9 @@ class GPInterpolation(object):
         self.nbins = nbins
         self.min_sep = min_sep
         self.max_sep = max_sep
+        self.pixel_size = pixel_size
+        self.power_threshold = power_threshold
+        self.apodize = apodize
 
         if self.optimizer == "anisotropic":
             self.robust_fit = True
@@ -88,10 +134,33 @@ class GPInterpolation(object):
                 "kernel should be a string a list or a numpy.ndarray of string"
             )
 
-        if self.optimizer not in ["anisotropic", "two-pcf", "log-likelihood", "none"]:
+        if self.optimizer not in [
+            "anisotropic",
+            "two-pcf",
+            "empirical-2pcf",
+            "log-likelihood",
+            "none",
+        ]:
             raise ValueError(
-                "Only anisotropic, two-pcf, log-likelihood and none are supported for optimizer. Current value: %s"
-                % (self.optimizer)
+                "Only anisotropic, two-pcf, empirical-2pcf, log-likelihood and none "
+                "are supported for optimizer. Current value: %s" % (self.optimizer)
+            )
+
+        if self.optimizer == "empirical-2pcf" and kernel != "RBF(1)":
+            raise ValueError(
+                "The empirical-2pcf optimizer builds its own "
+                "EmpiricalCorrelationKernel from the measured 2-point "
+                "correlation function, so the kernel argument is ignored and "
+                "should be left to its default value. Current value: %s" % (kernel)
+            )
+        if self.optimizer != "none" and _kernel_contains(
+            self.kernel_template, EmpiricalCorrelationKernel
+        ):
+            raise ValueError(
+                "EmpiricalCorrelationKernel has no hyperparameters to fit, so "
+                "it can only be used with optimizer='empirical-2pcf' (where it "
+                "is built automatically) or optimizer='none'. "
+                "Current optimizer: %s" % (self.optimizer)
             )
 
         if average_fits is not None:
@@ -134,6 +203,20 @@ class GPInterpolation(object):
                     anisotropic=anisotropic,
                     robust_fit=self.robust_fit,
                     p0=self.p0_robust_fit,
+                )
+                kernel = self._optimizer.optimizer(kernel)
+            # Kernel built directly from the measured 2d 2-point correlation
+            # function (Gomes et al. 2025). No hyperparameters are fitted and
+            # the given kernel is ignored.
+            if self.optimizer == "empirical-2pcf":
+                self._optimizer = treegp.empirical_2pcf(
+                    X,
+                    y,
+                    y_err,
+                    max_sep=self.max_sep,
+                    pixel_size=self.pixel_size,
+                    power_threshold=self.power_threshold,
+                    apodize=self.apodize,
                 )
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.
@@ -179,7 +262,14 @@ class GPInterpolation(object):
         HT = kernel.__call__(X2, Y=X1)
         if self._alpha is None:
             K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
-            self._fact = cholesky(K, lower=True)
+            try:
+                self._fact = cholesky(K, lower=True)
+            except np.linalg.LinAlgError as e:
+                raise np.linalg.LinAlgError(
+                    "Cholesky decomposition of the covariance matrix failed "
+                    "(%s). The kernel might not be positive definite; "
+                    "increasing white_noise can help." % (str(e))
+                )
             self._alpha = cho_solve((self._fact, True), y)
         y_predict = np.dot(HT, self._alpha.reshape((len(self._alpha), 1))).T[0]
         if return_cov:
@@ -258,6 +348,11 @@ class GPInterpolation(object):
         """
         Return 2-point correlation function and its variance using Bootstrap.
         """
+        if self.optimizer == "empirical-2pcf":
+            raise NotImplementedError(
+                "return_2pcf is not available for the empirical-2pcf optimizer. "
+                "Use return_empirical_2pcf instead."
+            )
         anisotropic = self.optimizer == "anisotropic"
         pcf = treegp.two_pcf(
             self._X,
@@ -270,6 +365,31 @@ class GPInterpolation(object):
         )
         xi, xi_weight, distance, coord, mask = pcf.return_2pcf()
         return xi, xi_weight, distance, coord, mask
+
+    def return_empirical_2pcf(self):
+        """
+        Return the measured and cleaned 2d 2-point correlation functions
+        used as kernel by the empirical-2pcf optimizer, the lag coordinates
+        of the grid, and the pixel size of the grid.
+
+        Returns xi, xi_clean, distance, pixel_size where xi and xi_clean
+        are (npix, npix) arrays with zero lag at pixel npix//2, and
+        distance is a (npix*npix, 2) array of the (dx, dy) lags matching
+        the flattened correlation functions.
+        """
+        if self.optimizer != "empirical-2pcf":
+            raise NotImplementedError(
+                "return_empirical_2pcf is only available for the "
+                "empirical-2pcf optimizer. Current optimizer: %s" % (self.optimizer)
+            )
+        if not hasattr(self, "_optimizer"):
+            raise RuntimeError("solve() must be called before return_empirical_2pcf.")
+        return (
+            self._optimizer._xi,
+            self._optimizer._xi_clean,
+            self._optimizer._2pcf_dist,
+            self._optimizer.pixel_size,
+        )
 
     def return_log_likelihood(self, theta=None):
         """

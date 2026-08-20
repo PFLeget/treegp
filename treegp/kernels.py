@@ -5,6 +5,7 @@
 import numpy as np
 from scipy.spatial.distance import pdist, cdist, squareform
 from scipy import special
+from scipy.interpolate import RegularGridInterpolator
 from sklearn.gaussian_process.kernels import (
     StationaryKernelMixin,
     NormalizedKernelMixin,
@@ -418,3 +419,98 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
     @property
     def bounds(self):
         return self._bounds
+
+
+class EmpiricalCorrelationKernel(StationaryKernelMixin, Kernel):
+    """A tabulated stationary anisotropic kernel built from a measured
+    2d 2-point correlation function, following Gomes et al. (2025)
+    (AJ 170:361, doi:10.3847/1538-3881/ae1a7b).
+
+    The kernel has no free hyperparameters (theta is empty): it evaluates
+    K(X, Y)[i, j] = xi(X_i - Y_j) by bilinear interpolation of the given
+    correlation function grid, and is zero beyond the grid (compact
+    support).
+
+    A tabulated correlation function is not guaranteed to be positive
+    semi-definite between arbitrary points, so by default the covariance
+    matrices built when Y is None are projected onto the closest positive
+    semi-definite matrix by clipping their negative eigenvalues to zero.
+    This is equivalent to the singular value clipping used by
+    Gomes et al. (2025).
+
+    Input is expected to be 2-dimensional, i.e. X.shape = (n_samples, 2).
+
+    :param x_grid:  Lag coordinates of the grid columns, zero lag
+                    at index len(x_grid)//2. (nx,) ndarray
+    :param y_grid:  Lag coordinates of the grid rows, zero lag
+                    at index len(y_grid)//2. (ny,) ndarray
+    :param xi_grid: 2d correlation function in treecorr TwoD layout,
+                    i.e. indexed [iy, ix]. (ny, nx) ndarray
+    :param clip_eigenvalues: Whether to clip the negative eigenvalues of
+                    the covariance matrices built when Y is None.
+                    [default: True]
+    """
+
+    def __init__(self, x_grid, y_grid, xi_grid, clip_eigenvalues=True):
+        self.x_grid = np.asarray(x_grid)
+        self.y_grid = np.asarray(y_grid)
+        self.xi_grid = np.asarray(xi_grid)
+        self.clip_eigenvalues = clip_eigenvalues
+        if self.xi_grid.shape != (len(self.y_grid), len(self.x_grid)):
+            raise ValueError(
+                "xi_grid shape %s does not match (len(y_grid), len(x_grid)) = %s"
+                % (str(self.xi_grid.shape), str((len(self.y_grid), len(self.x_grid))))
+            )
+        # xi_grid is indexed [iy, ix], while the interpolator axes are
+        # (x lag, y lag), hence the transpose.
+        self._interp = RegularGridInterpolator(
+            (self.x_grid, self.y_grid),
+            self.xi_grid.T,
+            method="linear",
+            bounds_error=False,
+            fill_value=0.0,
+        )
+
+    @property
+    def xi0(self):
+        """Zero-lag value of the correlation function, i.e. the variance
+        of the field."""
+        return float(self._interp(np.zeros((1, 2)))[0])
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+        if eval_gradient:
+            raise ValueError("Gradient can not be evaluated.")
+        X = np.atleast_2d(X)
+        if np.shape(X)[1] != 2:
+            raise ValueError(
+                "EmpiricalCorrelationKernel supports only 2d coordinates. "
+                "Current ndim: %i" % (np.shape(X)[1])
+            )
+        if Y is None:
+            d = X[:, np.newaxis, :] - X[np.newaxis, :, :]
+            K = self._interp(d)
+            # The tabulated correlation function is point-symmetric except
+            # for its first row/column (the most negative lag has no
+            # positive counterpart on the grid), so symmetrize to get an
+            # exactly symmetric covariance matrix.
+            K = 0.5 * (K + K.T)
+            if self.clip_eigenvalues:
+                eigenvalues, eigenvectors = np.linalg.eigh(K)
+                if np.any(eigenvalues < 0.0):
+                    K = (eigenvectors * np.clip(eigenvalues, 0.0, None)).dot(
+                        eigenvectors.T
+                    )
+                    K = 0.5 * (K + K.T)
+        else:
+            Y = np.atleast_2d(Y)
+            d = X[:, np.newaxis, :] - Y[np.newaxis, :, :]
+            K = self._interp(d)
+        return K
+
+    def diag(self, X):
+        return np.full(len(X), self.xi0)
+
+    def __repr__(self):
+        return "{0}(npix={1!r}, xi0={2:.4g})".format(
+            self.__class__.__name__, self.xi_grid.shape, self.xi0
+        )
