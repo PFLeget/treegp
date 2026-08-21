@@ -99,6 +99,23 @@ class GPInterpolation(object):
                          taper but leaves the window non-zero at the grid edge,
                          reintroducing some spectral leakage. Used only by the
                          "empirical-2pcf" optimizer. [default: None]
+    :param apod_anisotropy: Anisotropy of the apodization window, using the (g1, g2)
+                         shear parametrization of Leget et al. 2021 (same convention as
+                         get_correlation_length_matrix). None gives an isotropic window.
+                         A (g1, g2) tuple applies the given shear: the window reaches
+                         zero at apod_radius along the major axis (direction
+                         0.5 arctan2(g2, g1) from the x axis) and at apod_radius * q
+                         along the minor axis, with q = (1 - g) / (1 + g). "auto"
+                         measures (g1, g2) on the correlation function itself: a first
+                         cleaning pass is done with the isotropic window, the anisotropy
+                         of its output is measured with adaptive weighted second
+                         moments, and the raw correlation function is re-cleaned with
+                         the matched elliptical window. Ignored if apodize is False.
+                         Used only by the "empirical-2pcf" optimizer. [default: None]
+    :param apod_g_scale: Factor multiplying the measured (g1, g2) before building the
+                         elliptical window when apod_anisotropy="auto", to soften (< 1)
+                         or exaggerate (> 1) the anisotropy of the taper. Used only by
+                         the "empirical-2pcf" optimizer. [default: 1.]
     """
 
     def __init__(
@@ -119,6 +136,8 @@ class GPInterpolation(object):
         apodize=True,
         apod_window="blackman-harris",
         apod_radius=None,
+        apod_anisotropy=None,
+        apod_g_scale=1.0,
     ):
         self.normalize = normalize
         self.optimizer = optimizer
@@ -132,6 +151,8 @@ class GPInterpolation(object):
         self.apodize = apodize
         self.apod_window = apod_window
         self.apod_radius = apod_radius
+        self.apod_anisotropy = apod_anisotropy
+        self.apod_g_scale = apod_g_scale
 
         if self.optimizer == "anisotropic":
             self.robust_fit = True
@@ -233,6 +254,8 @@ class GPInterpolation(object):
                     apodize=self.apodize,
                     apod_window=self.apod_window,
                     apod_radius=self.apod_radius,
+                    apod_anisotropy=self.apod_anisotropy,
+                    apod_g_scale=self.apod_g_scale,
                 )
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.

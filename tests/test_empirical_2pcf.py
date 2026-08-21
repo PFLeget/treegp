@@ -12,7 +12,20 @@ from treegp.empirical_2pcf import (
     _corr2power,
     _power2corr,
     _apod,
+    _adaptive_moments,
 )
+
+
+def make_elliptical_gaussian(npix, size, g1, g2):
+    """Elliptical gaussian map in treecorr TwoD layout ([iy, ix]),
+    centered on pixel npix//2, using the Leget et al. 2021 shear
+    parametrization (size = major axis, in pixels)."""
+    L = get_correlation_length_matrix(size, g1, g2)
+    invL = np.linalg.inv(L)
+    lag = np.arange(npix) - npix // 2
+    dx, dy = np.meshgrid(lag, lag)
+    arg = invL[0, 0] * dx**2 + 2.0 * invL[0, 1] * dx * dy + invL[1, 1] * dy**2
+    return np.exp(-0.5 * arg)
 
 
 def make_gp(npoints=2000, noise=0.3, white_noise=0.0, seed=42):
@@ -236,6 +249,14 @@ def test_empirical_2pcf_helpers():
     interior = _apod(xi, r_max=0.9 * (npix // 2)) > 0.0
     assert np.all(window_hann[interior] >= window[interior])
 
+    # An elliptical window with g1 > 0 (major axis along x) is wider
+    # along x than along y, and reduces exactly to the isotropic
+    # window at g1 = g2 = 0.
+    window_ell = _apod(xi, window="hann", g1=0.4, g2=0.0)
+    d = npix // 4
+    assert window_ell[npix // 2, npix // 2 + d] > window_ell[npix // 2 + d, npix // 2]
+    np.testing.assert_allclose(_apod(xi, g1=0.0, g2=0.0), _apod(xi), atol=1e-14)
+
     # A smaller apodization radius reaches zero earlier.
     window_small = _apod(xi, r_max=npix // 4)
     np.testing.assert_allclose(window_small[npix // 2, npix // 2], 1.0, atol=1e-10)
@@ -245,6 +266,70 @@ def test_empirical_2pcf_helpers():
     # A larger radius leaves the window non-zero at the grid edge.
     window_large = _apod(xi, r_max=npix, window="hann")
     assert window_large[npix // 2, 0] > 0.1
+
+
+@timer
+def test_adaptive_moments():
+    # Adaptive moments recover the shear of an analytic elliptical
+    # gaussian in the get_correlation_length_matrix convention.
+    for g1_true, g2_true in [(0.0, 0.0), (0.3, 0.0), (0.0, -0.2), (0.2, 0.2)]:
+        f = make_elliptical_gaussian(64, 6.0, g1_true, g2_true)
+        g1, g2 = _adaptive_moments(f)
+        np.testing.assert_allclose([g1, g2], [g1_true, g2_true], atol=1e-2)
+
+    # An all-zero (or all-negative, clipped to zero) map returns no
+    # anisotropy.
+    assert _adaptive_moments(np.zeros((32, 32))) == (0.0, 0.0)
+    assert _adaptive_moments(-np.ones((32, 32))) == (0.0, 0.0)
+
+
+@timer
+def test_empirical_2pcf_anisotropic_apod():
+    L = get_correlation_length_matrix(2.0, 0.2, 0.2)
+    invLam = np.linalg.inv(L)
+    kernel = 2.0**2 * treegp.AnisotropicRBF(invLam=invLam)
+    X, y, y_err = make_2d_grf(kernel, noise=0.3, seed=42, npoints=2000)
+
+    def run(**kwargs):
+        gp = treegp.GPInterpolation(
+            optimizer="empirical-2pcf",
+            normalize=True,
+            max_sep=6.0,
+            pixel_size=0.5,
+            **kwargs,
+        )
+        gp.initialize(X, y, y_err=y_err)
+        gp.solve()
+        return gp
+
+    # Auto mode: the field was generated with positive (g1, g2), so the
+    # measured anisotropy of its 2-pcf must have positive components,
+    # and the applied shear is the measured one times apod_g_scale.
+    gp = run(apod_anisotropy="auto", apod_g_scale=0.5)
+    g1_m, g2_m = gp._optimizer._apod_g_measured
+    assert g1_m > 0.0
+    assert g2_m > 0.0
+    np.testing.assert_allclose(
+        gp._optimizer._apod_g_applied, [0.5 * g1_m, 0.5 * g2_m], atol=1e-12
+    )
+    assert gp._optimizer._xi_clean_pass1 is not None
+    y_predict = gp.predict(X)
+    assert np.var(y - y_predict) < 0.5 * np.var(y)
+
+    # apod_g_scale = 0 in auto mode applies an isotropic window, so the
+    # final map is identical to the first pass.
+    gp = run(apod_anisotropy="auto", apod_g_scale=0.0)
+    np.testing.assert_allclose(
+        gp._optimizer._xi_clean, gp._optimizer._xi_clean_pass1, atol=1e-14
+    )
+
+    # Manual mode: the given shear is applied directly, nothing is
+    # measured.
+    gp = run(apod_anisotropy=(0.3, 0.1))
+    assert gp._optimizer._apod_g_measured is None
+    np.testing.assert_allclose(gp._optimizer._apod_g_applied, [0.3, 0.1], atol=1e-12)
+    y_predict = gp.predict(X)
+    assert np.var(y - y_predict) < 0.5 * np.var(y)
 
 
 @timer
@@ -287,6 +372,25 @@ def test_empirical_2pcf_validation():
         y,
         np.zeros_like(y),
         apod_radius=-1.0,
+    )
+
+    # Invalid apod_anisotropy and apod_g_scale values are rejected.
+    for bad in ["hsm", (0.1, 0.2, 0.3), (0.8, 0.7)]:
+        np.testing.assert_raises(
+            ValueError,
+            treegp.empirical_2pcf,
+            X2d,
+            y,
+            np.zeros_like(y),
+            apod_anisotropy=bad,
+        )
+    np.testing.assert_raises(
+        ValueError,
+        treegp.empirical_2pcf,
+        X2d,
+        y,
+        np.zeros_like(y),
+        apod_g_scale=-0.5,
     )
 
     # The empirical-2pcf optimizer builds its own kernel: passing one
@@ -361,4 +465,6 @@ if __name__ == "__main__":
     test_empirical_2pcf_introspection()
     test_empirical_kernel_orientation()
     test_empirical_2pcf_helpers()
+    test_adaptive_moments()
+    test_empirical_2pcf_anisotropic_apod()
     test_empirical_2pcf_validation()

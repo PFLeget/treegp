@@ -3,12 +3,14 @@
 """
 
 import copy
+import warnings
 import numpy as np
 import treecorr
 
 from scipy import fft
 
 from .kernels import EmpiricalCorrelationKernel
+from .two_pcf import get_correlation_length_matrix
 
 
 def _blackman_harris(r, r_max=1.0):
@@ -47,10 +49,17 @@ APOD_WINDOWS = {
 }
 
 
-def _apod(corr, r_max=None, window="blackman-harris"):
+def _apod(corr, r_max=None, window="blackman-harris", g1=0.0, g2=0.0):
     """Return an apodization window with the same shape as the given
     2d correlation function, equal to 1 at zero lag (pixel N//2) and
     going to zero at r_max pixels from it.
+
+    The window can be made elliptical using the (g1, g2) shear
+    parametrization of Leget et al. (2021) (same convention as
+    get_correlation_length_matrix): the window reaches zero at r_max
+    along the major axis, whose direction is phi = 0.5 arctan2(g2, g1)
+    from the x (column) axis, and at r_max * q along the minor axis,
+    with q = (1 - g) / (1 + g). At g1 = g2 = 0 the window is isotropic.
 
     :param corr:   2d correlation function, zero lag at pixel N//2.
                    (N, N) ndarray
@@ -61,14 +70,96 @@ def _apod(corr, r_max=None, window="blackman-harris"):
                    spectral leakage. [default: None]
     :param window: Name of the window function, one of "blackman-harris"
                    or "hann". [default: "blackman-harris"]
+    :param g1, g2: Shear applied to the isotropic window.
+                   [default: 0., 0.]
     """
     if r_max is None:
         r_max = corr.shape[0] // 2
     yx = np.indices(corr.shape)
     ctr = np.array(corr.shape) // 2
     yx -= ctr[:, np.newaxis, np.newaxis]
-    rad = np.hypot(yx[0], yx[1])
-    return APOD_WINDOWS[window](rad, r_max)
+    dy = yx[0]
+    dx = yx[1]
+    # Dimensionless elliptical radius, equal to 1 on the ellipse with
+    # semi-major axis r_max. Reduces to rad / r_max at g1 = g2 = 0.
+    L = get_correlation_length_matrix(r_max, g1, g2)
+    invL = np.linalg.inv(L)
+    r_ell = np.sqrt(
+        invL[0, 0] * dx**2 + 2.0 * invL[0, 1] * dx * dy + invL[1, 1] * dy**2
+    )
+    return APOD_WINDOWS[window](r_ell, 1.0)
+
+
+def _adaptive_moments(xi_map, n_iter=30, tol=1e-6):
+    """Measure the anisotropy of a 2d correlation function map using
+    HSM-like adaptive weighted second moments: the weight function is an
+    elliptical gaussian that is iterated until it matches the measured
+    moments (Hirata & Seljak 2003). Negative values of the map are
+    clipped to zero, and the map is assumed to be centered on pixel
+    N//2 (no centroid iteration).
+
+    Returns the measured anisotropy as a (g1, g2) shear, in the same
+    convention as get_correlation_length_matrix.
+
+    :param xi_map: 2d correlation function, zero lag at pixel N//2.
+                   (N, N) ndarray
+    :param n_iter: Maximum number of iterations. [default: 30]
+    :param tol:    Relative tolerance on the moment matrix for
+                   convergence. [default: 1e-6]
+    """
+    f = np.clip(xi_map, 0.0, None)
+    if np.all(f == 0.0):
+        return 0.0, 0.0
+
+    yx = np.indices(f.shape)
+    ctr = np.array(f.shape) // 2
+    yx = yx - ctr[:, np.newaxis, np.newaxis]
+    dy = yx[0].astype(float)
+    dx = yx[1].astype(float)
+
+    # Start from an isotropic gaussian weight.
+    sigma = f.shape[0] / 8.0
+    M = np.array([[sigma**2, 0.0], [0.0, sigma**2]])
+    converged = False
+    for _ in range(n_iter):
+        invM = np.linalg.inv(M)
+        arg = invM[0, 0] * dx**2 + 2.0 * invM[0, 1] * dx * dy + invM[1, 1] * dy**2
+        w = np.exp(-0.5 * arg)
+        norm = np.sum(w * f)
+        if norm <= 0.0:
+            return 0.0, 0.0
+        mxx = np.sum(w * f * dx * dx) / norm
+        myy = np.sum(w * f * dy * dy) / norm
+        mxy = np.sum(w * f * dx * dy) / norm
+        # The factor 2 makes the iteration converge to the true
+        # covariance for a gaussian map: the weighted moments measure
+        # (C^-1 + M^-1)^-1, whose fixed point after doubling is M = C.
+        M_new = 2.0 * np.array([[mxx, mxy], [mxy, myy]])
+        if np.max(np.abs(M_new - M)) < tol * np.trace(M_new):
+            M = M_new
+            converged = True
+            break
+        M = M_new
+    if not converged:
+        warnings.warn(
+            "Adaptive moments did not converge after %i iterations; "
+            "using the last iterate." % (n_iter)
+        )
+
+    # Moments give the distortion chi; convert it to the shear g used
+    # by get_correlation_length_matrix.
+    trace = M[0, 0] + M[1, 1]
+    chi1 = (M[0, 0] - M[1, 1]) / trace
+    chi2 = 2.0 * M[0, 1] / trace
+    chi = np.hypot(chi1, chi2)
+    if chi == 0.0:
+        return 0.0, 0.0
+    if chi >= 1.0:
+        # Degenerate (essentially 1d) map; cap just below 1.
+        chi = 1.0 - 1e-12
+    q = np.sqrt((1.0 - chi) / (1.0 + chi))
+    g = (1.0 - q) / (1.0 + q)
+    return g * chi1 / chi, g * chi2 / chi
 
 
 def _shift_and_bin(corr_func):
@@ -188,6 +279,28 @@ class empirical_2pcf(object):
                             window non-zero at the grid edge,
                             reintroducing some spectral leakage.
                             [default: None]
+    :param apod_anisotropy: Anisotropy of the apodization window, using
+                            the (g1, g2) shear parametrization of Leget
+                            et al. (2021). None gives an isotropic
+                            window. A (g1, g2) tuple applies the given
+                            shear: the window reaches zero at
+                            apod_radius along the major axis (direction
+                            0.5 arctan2(g2, g1) from the x axis) and at
+                            apod_radius * q along the minor axis, with
+                            q = (1 - g) / (1 + g). "auto" measures
+                            (g1, g2) on the correlation function itself:
+                            a first cleaning pass is done with the
+                            isotropic window, the anisotropy of its
+                            output is measured with adaptive weighted
+                            second moments, and the raw correlation
+                            function is re-cleaned with the matched
+                            elliptical window. Ignored if apodize is
+                            False. [default: None]
+    :param apod_g_scale:    Factor multiplying the measured (g1, g2)
+                            before building the elliptical window in
+                            "auto" mode, to soften (< 1) or exaggerate
+                            (> 1) the anisotropy of the taper.
+                            [default: 1.]
     """
 
     def __init__(
@@ -201,6 +314,8 @@ class empirical_2pcf(object):
         apodize=True,
         apod_window="blackman-harris",
         apod_radius=None,
+        apod_anisotropy=None,
+        apod_g_scale=1.0,
     ):
         self.ndim = np.shape(X)[1]
         if self.ndim != 2:
@@ -217,6 +332,25 @@ class empirical_2pcf(object):
             raise ValueError(
                 "apod_radius must be positive. Current value: %s" % (apod_radius)
             )
+        if apod_anisotropy is not None and not (
+            isinstance(apod_anisotropy, str) and apod_anisotropy == "auto"
+        ):
+            apod_anisotropy = np.asarray(apod_anisotropy, dtype=float)
+            if apod_anisotropy.shape != (2,):
+                raise ValueError(
+                    "apod_anisotropy must be None, 'auto', or a (g1, g2) pair. "
+                    "Current value: %s" % (apod_anisotropy)
+                )
+            if np.hypot(apod_anisotropy[0], apod_anisotropy[1]) >= 1.0:
+                raise ValueError(
+                    "The norm of the apod_anisotropy (g1, g2) shear must be "
+                    "lower than one. Current value: %s" % (apod_anisotropy)
+                )
+        if not np.isfinite(apod_g_scale) or apod_g_scale < 0:
+            raise ValueError(
+                "apod_g_scale must be finite and non-negative. "
+                "Current value: %s" % (apod_g_scale)
+            )
         self.X = X
         self.y = y
         self.y_err = y_err
@@ -224,6 +358,8 @@ class empirical_2pcf(object):
         self.apodize = apodize
         self.apod_window = apod_window
         self.apod_radius = apod_radius
+        self.apod_anisotropy = apod_anisotropy
+        self.apod_g_scale = apod_g_scale
 
         size_x = np.max(X[:, 0]) - np.min(X[:, 0])
         size_y = np.max(X[:, 1]) - np.min(X[:, 1])
@@ -279,23 +415,23 @@ class empirical_2pcf(object):
         kk.process(cat)
         return _shift_and_bin(kk.xi)
 
-    def clean(self, xi):
-        """
-        Clean the measured 2d 2-point correlation function by apodizing
-        it (if requested) and keeping only the Fourier modes above
-        power_threshold times the noise. The surviving power is
-        positive, so the cleaned correlation function is positive
-        semi-definite on its grid.
+    def _clean_pass(self, xi, g1=0.0, g2=0.0):
+        """Single cleaning pass: apodize (if requested) with the given
+        window shear, threshold the Fourier power spectrum, and
+        transform back.
 
-        :param xi: Measured 2d correlation function, zero lag at
-                   pixel npix//2. (npix, npix) ndarray
+        :param xi:     Measured 2d correlation function, zero lag at
+                       pixel npix//2. (npix, npix) ndarray
+        :param g1, g2: Shear applied to the apodization window.
+                       [default: 0., 0.]
         """
         if self.apodize:
             if self.apod_radius is None:
                 r_max = None
             else:
                 r_max = self.apod_radius / self.pixel_size
-            pk = _corr2power(xi * _apod(xi, r_max=r_max, window=self.apod_window))
+            window = _apod(xi, r_max=r_max, window=self.apod_window, g1=g1, g2=g2)
+            pk = _corr2power(xi * window)
         else:
             pk = _corr2power(xi)
         pk = _threshold(pk, n_sigma=self.power_threshold)
@@ -307,6 +443,50 @@ class empirical_2pcf(object):
                 "power_threshold (current value: %f)." % (self.power_threshold)
             )
         return _power2corr(pk)
+
+    def clean(self, xi):
+        """
+        Clean the measured 2d 2-point correlation function by apodizing
+        it (if requested) and keeping only the Fourier modes above
+        power_threshold times the noise. The surviving power is
+        positive, so the cleaned correlation function is positive
+        semi-definite on its grid.
+
+        With apod_anisotropy="auto", a first pass is cleaned with the
+        isotropic window, the anisotropy of its output is measured with
+        adaptive weighted second moments, and the raw correlation
+        function is re-cleaned with the matched elliptical window
+        (scaled by apod_g_scale). The measured and applied shears are
+        stored in _apod_g_measured and _apod_g_applied, and the first
+        pass in _xi_clean_pass1.
+
+        :param xi: Measured 2d correlation function, zero lag at
+                   pixel npix//2. (npix, npix) ndarray
+        """
+        self._apod_g_measured = None
+        self._xi_clean_pass1 = None
+        g1, g2 = 0.0, 0.0
+        if self.apodize and self.apod_anisotropy is not None:
+            if isinstance(self.apod_anisotropy, str):
+                # "auto": isotropic pass, measure, elliptical re-clean.
+                xi_pass1 = self._clean_pass(xi)
+                g1_m, g2_m = _adaptive_moments(xi_pass1)
+                self._xi_clean_pass1 = xi_pass1
+                self._apod_g_measured = (g1_m, g2_m)
+                g1 = self.apod_g_scale * g1_m
+                g2 = self.apod_g_scale * g2_m
+                g_norm = np.hypot(g1, g2)
+                if g_norm >= 0.9:
+                    warnings.warn(
+                        "The scaled apodization shear norm (%f) was capped "
+                        "at 0.9." % (g_norm)
+                    )
+                    g1 *= 0.9 / g_norm
+                    g2 *= 0.9 / g_norm
+            else:
+                g1, g2 = self.apod_anisotropy
+        self._apod_g_applied = (g1, g2)
+        return self._clean_pass(xi, g1=g1, g2=g2)
 
     def optimizer(self, kernel):
         """
