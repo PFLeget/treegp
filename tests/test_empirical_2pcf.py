@@ -223,6 +223,29 @@ def test_empirical_2pcf_helpers():
     np.testing.assert_allclose(window[npix // 2, npix // 2], 1.0, atol=1e-10)
     np.testing.assert_allclose(window[npix // 2, 0], 0.0, atol=1e-4)
 
+    # The Hann window is exactly zero at its edge, 1/2 at half radius,
+    # and gentler (larger) than Blackman-Harris in the interior. (Right
+    # at the edge Blackman-Harris is larger: it floors at 6e-5 while
+    # Hann goes to zero quadratically.)
+    window_hann = _apod(xi, window="hann")
+    np.testing.assert_allclose(window_hann[npix // 2, npix // 2], 1.0, atol=1e-10)
+    np.testing.assert_allclose(window_hann[npix // 2, 0], 0.0, atol=1e-10)
+    np.testing.assert_allclose(
+        window_hann[npix // 2, npix // 2 + npix // 4], 0.5, atol=1e-10
+    )
+    interior = _apod(xi, r_max=0.9 * (npix // 2)) > 0.0
+    assert np.all(window_hann[interior] >= window[interior])
+
+    # A smaller apodization radius reaches zero earlier.
+    window_small = _apod(xi, r_max=npix // 4)
+    np.testing.assert_allclose(window_small[npix // 2, npix // 2], 1.0, atol=1e-10)
+    np.testing.assert_allclose(
+        window_small[npix // 2, npix // 2 + npix // 4 + 1 :], 0.0, atol=1e-10
+    )
+    # A larger radius leaves the window non-zero at the grid edge.
+    window_large = _apod(xi, r_max=npix, window="hann")
+    assert window_large[npix // 2, 0] > 0.1
+
 
 @timer
 def test_empirical_2pcf_validation():
@@ -245,6 +268,26 @@ def test_empirical_2pcf_validation():
 
     # Unknown optimizer is rejected.
     np.testing.assert_raises(ValueError, treegp.GPInterpolation, optimizer="gomes25")
+
+    # Unknown apodization window and non-positive apodization radius
+    # are rejected.
+    X2d = np.random.uniform(-10, 10, 200).reshape((100, 2))
+    np.testing.assert_raises(
+        ValueError,
+        treegp.empirical_2pcf,
+        X2d,
+        y,
+        np.zeros_like(y),
+        apod_window="tukey",
+    )
+    np.testing.assert_raises(
+        ValueError,
+        treegp.empirical_2pcf,
+        X2d,
+        y,
+        np.zeros_like(y),
+        apod_radius=-1.0,
+    )
 
     # The empirical-2pcf optimizer builds its own kernel: passing one
     # is rejected.
@@ -289,6 +332,24 @@ def test_empirical_2pcf_validation():
     )
     gp.initialize(X, y)
     gp.solve()
+    y_predict = gp.predict(X)
+    assert np.var(y - y_predict) < 0.5 * np.var(y)
+
+    # The apodization window and radius are threaded through
+    # GPInterpolation, and the interpolation still works with them.
+    gp = treegp.GPInterpolation(
+        optimizer="empirical-2pcf",
+        normalize=True,
+        white_noise=0.7,
+        max_sep=6.0,
+        pixel_size=0.5,
+        apod_window="hann",
+        apod_radius=4.0,
+    )
+    gp.initialize(X, y)
+    gp.solve()
+    assert gp._optimizer.apod_window == "hann"
+    assert gp._optimizer.apod_radius == 4.0
     y_predict = gp.predict(X)
     assert np.var(y - y_predict) < 0.5 * np.var(y)
 

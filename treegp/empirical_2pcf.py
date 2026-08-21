@@ -28,19 +28,47 @@ def _blackman_harris(r, r_max=1.0):
     return np.where(np.abs(upi) <= np.pi, out, 0.0)
 
 
-def _apod(corr):
-    """Return a Blackman-Harris apodization window with the same shape
-    as the given 2d correlation function, equal to 1 at zero lag
-    (pixel N//2) and going to zero at N//2 pixels from it.
+def _hann(r, r_max=1.0):
+    """Return Hann function of variable r with peak at 1.0 and going
+    to zero at r_max. Gentler taper (less bias on the correlation
+    function) than Blackman-Harris, at the price of more spectral
+    leakage.
 
-    :param corr: 2d correlation function, zero lag at pixel N//2. (N, N) ndarray
+    :param r:     Radii where to evaluate the window. (ndarray)
+    :param r_max: Radius where the window reaches zero. [default: 1.]
     """
-    s = corr.shape[0] // 2
+    out = 0.5 * (1.0 + np.cos(np.pi * r / r_max))
+    return np.where(np.abs(r) <= r_max, out, 0.0)
+
+
+APOD_WINDOWS = {
+    "blackman-harris": _blackman_harris,
+    "hann": _hann,
+}
+
+
+def _apod(corr, r_max=None, window="blackman-harris"):
+    """Return an apodization window with the same shape as the given
+    2d correlation function, equal to 1 at zero lag (pixel N//2) and
+    going to zero at r_max pixels from it.
+
+    :param corr:   2d correlation function, zero lag at pixel N//2.
+                   (N, N) ndarray
+    :param r_max:  Radius (in pixels) where the window reaches zero.
+                   N//2 (the grid edge) if not given. A radius beyond
+                   the grid edge gives a gentler taper but leaves the
+                   window non-zero at the edge, reintroducing some
+                   spectral leakage. [default: None]
+    :param window: Name of the window function, one of "blackman-harris"
+                   or "hann". [default: "blackman-harris"]
+    """
+    if r_max is None:
+        r_max = corr.shape[0] // 2
     yx = np.indices(corr.shape)
     ctr = np.array(corr.shape) // 2
     yx -= ctr[:, np.newaxis, np.newaxis]
     rad = np.hypot(yx[0], yx[1])
-    return _blackman_harris(rad, s)
+    return APOD_WINDOWS[window](rad, r_max)
 
 
 def _shift_and_bin(corr_func):
@@ -146,8 +174,20 @@ class empirical_2pcf(object):
                             modes of the measured correlation function are
                             set to zero. [default: 2.5]
     :param apodize:         Whether to apodize the measured correlation
-                            function with a Blackman-Harris window before
-                            taking its Fourier transform. [default: True]
+                            function before taking its Fourier transform.
+                            [default: True]
+    :param apod_window:     Name of the apodization window, one of
+                            "blackman-harris" or "hann". Hann is a gentler
+                            taper (less bias on the correlation function)
+                            at the price of more spectral leakage.
+                            [default: "blackman-harris"]
+    :param apod_radius:     Radius where the apodization window reaches
+                            zero, in the same units as X. max_sep (the
+                            grid edge) if not given. A radius beyond
+                            max_sep gives a gentler taper but leaves the
+                            window non-zero at the grid edge,
+                            reintroducing some spectral leakage.
+                            [default: None]
     """
 
     def __init__(
@@ -159,6 +199,8 @@ class empirical_2pcf(object):
         pixel_size=None,
         power_threshold=2.5,
         apodize=True,
+        apod_window="blackman-harris",
+        apod_radius=None,
     ):
         self.ndim = np.shape(X)[1]
         if self.ndim != 2:
@@ -166,11 +208,22 @@ class empirical_2pcf(object):
                 "empirical-2pcf supports only 2d modeling. Current ndim: %i"
                 % (self.ndim)
             )
+        if apod_window not in APOD_WINDOWS:
+            raise ValueError(
+                "Only %s are supported for apod_window. Current value: %s"
+                % (sorted(APOD_WINDOWS), apod_window)
+            )
+        if apod_radius is not None and apod_radius <= 0:
+            raise ValueError(
+                "apod_radius must be positive. Current value: %s" % (apod_radius)
+            )
         self.X = X
         self.y = y
         self.y_err = y_err
         self.power_threshold = power_threshold
         self.apodize = apodize
+        self.apod_window = apod_window
+        self.apod_radius = apod_radius
 
         size_x = np.max(X[:, 0]) - np.min(X[:, 0])
         size_y = np.max(X[:, 1]) - np.min(X[:, 1])
@@ -238,7 +291,11 @@ class empirical_2pcf(object):
                    pixel npix//2. (npix, npix) ndarray
         """
         if self.apodize:
-            pk = _corr2power(xi * _apod(xi))
+            if self.apod_radius is None:
+                r_max = None
+            else:
+                r_max = self.apod_radius / self.pixel_size
+            pk = _corr2power(xi * _apod(xi, r_max=r_max, window=self.apod_window))
         else:
             pk = _corr2power(xi)
         pk = _threshold(pk, n_sigma=self.power_threshold)

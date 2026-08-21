@@ -86,9 +86,19 @@ class GPInterpolation(object):
     :param power_threshold: Signal-to-noise threshold below which Fourier modes of the
                          measured 2-point correlation function are set to zero. Used only
                          by the "empirical-2pcf" optimizer. [default: 2.5]
-    :param apodize:      Whether to apodize the measured 2-point correlation function with
-                         a Blackman-Harris window before taking its Fourier transform.
-                         Used only by the "empirical-2pcf" optimizer. [default: True]
+    :param apodize:      Whether to apodize the measured 2-point correlation function
+                         before taking its Fourier transform. Used only by the
+                         "empirical-2pcf" optimizer. [default: True]
+    :param apod_window:  Name of the apodization window, one of "blackman-harris" or
+                         "hann". Hann is a gentler taper (less bias on the correlation
+                         function) at the price of more spectral leakage. Used only by
+                         the "empirical-2pcf" optimizer. [default: "blackman-harris"]
+    :param apod_radius:  Radius where the apodization window reaches zero, in the same
+                         units as the coordinates of the field. max_sep (the grid edge)
+                         if it is not given. A radius beyond max_sep gives a gentler
+                         taper but leaves the window non-zero at the grid edge,
+                         reintroducing some spectral leakage. Used only by the
+                         "empirical-2pcf" optimizer. [default: None]
     """
 
     def __init__(
@@ -107,6 +117,8 @@ class GPInterpolation(object):
         pixel_size=None,
         power_threshold=2.5,
         apodize=True,
+        apod_window="blackman-harris",
+        apod_radius=None,
     ):
         self.normalize = normalize
         self.optimizer = optimizer
@@ -118,6 +130,8 @@ class GPInterpolation(object):
         self.pixel_size = pixel_size
         self.power_threshold = power_threshold
         self.apodize = apodize
+        self.apod_window = apod_window
+        self.apod_radius = apod_radius
 
         if self.optimizer == "anisotropic":
             self.robust_fit = True
@@ -217,6 +231,8 @@ class GPInterpolation(object):
                     pixel_size=self.pixel_size,
                     power_threshold=self.power_threshold,
                     apodize=self.apodize,
+                    apod_window=self.apod_window,
+                    apod_radius=self.apod_radius,
                 )
                 kernel = self._optimizer.optimizer(kernel)
             # Hyperparameters estimation using maximum likelihood fit.
