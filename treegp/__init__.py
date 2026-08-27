@@ -11,6 +11,7 @@ from .gp_interp import GPInterpolation
 from .two_pcf import two_pcf
 from .log_likelihood import log_likelihood
 from .empirical_2pcf import empirical_2pcf
+from .grid_gp import GridConvolutionGP
 
 from .kernels import AnisotropicRBF
 from .kernels import VonKarman
@@ -30,6 +31,7 @@ __all__ = [
     "two_pcf",
     "log_likelihood",
     "empirical_2pcf",
+    "GridConvolutionGP",
     "AnisotropicRBF",
     "VonKarman",
     "AnisotropicVonKarman",
