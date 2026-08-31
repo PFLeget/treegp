@@ -1,6 +1,7 @@
 import numpy as np
 import treegp
 import copy
+import warnings
 
 from treegp_test_helper import timer
 from treegp_test_helper import get_correlation_length_matrix
@@ -14,6 +15,7 @@ from treegp.empirical_2pcf import (
     _apod,
     _adaptive_moments,
 )
+from treegp.grid_gp import _upsample_map, _symmetrize_kernel_image
 
 
 def make_elliptical_gaussian(npix, size, g1, g2):
@@ -28,7 +30,7 @@ def make_elliptical_gaussian(npix, size, g1, g2):
     return np.exp(-0.5 * arg)
 
 
-def make_gp(npoints=2000, noise=0.3, white_noise=0.0, seed=42):
+def make_gp(npoints=2000, noise=0.3, white_noise=0.0, seed=42, **kwargs):
     """Generate a 2d GRF with a known anisotropic kernel and return
     an initialized and solved GPInterpolation using empirical-2pcf."""
     L = get_correlation_length_matrix(2.0, 0.2, 0.2)
@@ -41,6 +43,7 @@ def make_gp(npoints=2000, noise=0.3, white_noise=0.0, seed=42):
         white_noise=white_noise,
         max_sep=6.0,
         pixel_size=0.5,
+        **kwargs,
     )
     gp.initialize(X, y, y_err=y_err)
     gp.solve()
@@ -78,14 +81,14 @@ def test_empirical_2pcf_gp():
 
 
 @timer
-def test_empirical_2pcf_eigenvalue_clipping():
+def test_empirical_2pcf_psd_repair():
     # The tabulated kernel is not guaranteed to be positive
-    # semi-definite between arbitrary points. By default the negative
-    # eigenvalues of the covariance matrix are clipped to zero
-    # (equivalent to the singular value clipping of Gomes et al. 2025);
-    # without the clipping, the Cholesky decomposition fails on this
-    # data set.
-    gp, X, y, y_err, noise = make_gp()
+    # semi-definite between arbitrary points. Calling the kernel with
+    # clip_eigenvalues=True (the default) clips the negative eigenvalues
+    # of the covariance matrix to zero (equivalent to the singular value
+    # clipping of Gomes et al. 2025), and the raw covariance of this
+    # data set is indeed indefinite.
+    gp, X, y, y_err, noise = make_gp(solve_method="direct")
     K = gp.kernel(X)
     eigenvalues = np.linalg.eigvalsh(K)
     assert np.all(eigenvalues > -1e-10)
@@ -93,8 +96,29 @@ def test_empirical_2pcf_eigenvalue_clipping():
     gp.kernel.clip_eigenvalues = False
     K_raw = gp.kernel(X)
     assert np.min(np.linalg.eigvalsh(K_raw)) < 0.0
+
+    # The direct solve path never pays for the eigenvalue clipping: it
+    # factors the raw covariance and repairs it with an escalating
+    # diagonal jitter, with a warning, and the prediction quality is
+    # preserved.
     gp._alpha = None
-    np.testing.assert_raises(np.linalg.LinAlgError, gp.predict, X)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        y_predict = gp.predict(X)
+    assert any("jitter" in str(wi.message) for wi in w)
+    assert np.var(y - y_predict) < 0.5 * np.var(y)
+
+    # The spectral solve path is positive semi-definite by construction
+    # (the negative Fourier modes of the padded kernel image are clipped
+    # to zero once), so it needs no repair at all: no jitter warning.
+    gp_s, X_s, y_s, _, _ = make_gp(solve_method="spectral")
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        y_predict_s = gp_s.predict(X_s)
+    assert not any("jitter" in str(wi.message) for wi in w)
+    assert gp_s._engine.spectrum_min < 0.0
+    assert np.all(gp_s._engine._spectrum >= 0.0)
+    assert np.var(y_s - y_predict_s) < 0.5 * np.var(y_s)
 
 
 @timer
@@ -458,9 +482,154 @@ def test_empirical_2pcf_validation():
     assert np.var(y - y_predict) < 0.5 * np.var(y)
 
 
+@timer
+def test_spectral_vs_direct():
+    # The spectral and direct solve methods differ only by the tent
+    # smoothing of the kernel (one fine-grid pixel wide) and by the PSD
+    # repair (Fourier-space clipping vs diagonal jitter): predictions
+    # agree at a small fraction of the signal, and both catch the field.
+    gp_s, X, y, y_err, noise = make_gp(solve_method="spectral")
+    gp_d, _, _, _, _ = make_gp(solve_method="direct")
+    pred_s = gp_s.predict(X)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        pred_d = gp_d.predict(X)
+    assert np.std(pred_s - pred_d) < 0.15 * np.std(pred_d)
+    assert np.var(y - pred_s) < 0.5 * np.var(y)
+    assert np.var(y - pred_d) < 0.5 * np.var(y)
+    # The conjugate gradient converged and its diagnostics are filled.
+    assert gp_s._engine.n_iterations > 0
+    assert gp_s._engine.xi0_eff > 0.0
+
+    # Solving is lazy (first predict) and survives a re-initialize with
+    # new values: the engine solution is reset and recomputed.
+    gp_s.initialize(X, y + 1.0, y_err=y_err)
+    assert gp_s._engine._alpha is None
+    pred_s2 = gp_s.predict(X)
+    # The agreement is limited by the conjugate gradient tolerance.
+    np.testing.assert_allclose(pred_s2, pred_s + 1.0, atol=1e-5)
+
+
+@timer
+def test_spectral_per_ccd():
+    # Predicting per detector (many small calls) samples the same
+    # precomputed mean field as one big call: results are identical
+    # and the per-call cost does not depend on the training set size.
+    gp, X, y, y_err, noise = make_gp(solve_method="spectral")
+    rng = np.random.default_rng(5)
+    X_test = rng.uniform(np.min(X), np.max(X), (300, 2))
+    full = gp.predict(X_test)
+    chunks = [gp.predict(X_test[i : i + 37]) for i in range(0, len(X_test), 37)]
+    np.testing.assert_allclose(np.concatenate(chunks), full, atol=1e-12)
+
+
+@timer
+def test_spectral_orientation():
+    # The anisotropy of the tabulated kernel survives the spectral
+    # representation: the pairwise covariance implied by the engine
+    # (W G W^T) matches the tabulated kernel, including its
+    # orientation, up to the tent smoothing.
+    npix = 24
+    pixel_size = 0.5
+    lag = (np.arange(npix) - npix // 2) * pixel_size
+    dx, dy = np.meshgrid(lag, lag)
+    xi_grid = 4.0 * np.exp(-0.5 * (dx**2 / 4.0 + dy**2 / 1.0))
+    kernel = treegp.EmpiricalCorrelationKernel(lag, lag, xi_grid)
+
+    X = np.array([[1.5, 0.0], [0.0, 0.0], [0.0, 1.5]])
+    engine = treegp.GridConvolutionGP(xi_grid, pixel_size, upsample=4)
+    engine._setup_geometry(X)
+    w = engine._spread_matrix(X)
+    K_eng = np.empty((3, 3))
+    for j in range(3):
+        field = (w.T @ np.eye(3)[j]).reshape(engine._ny, engine._nx)
+        K_eng[:, j] = w @ engine._convolve(field).ravel()
+    K_tab = kernel(X)
+    np.testing.assert_allclose(K_eng, K_tab, atol=0.15)
+    # Long correlation length along x: the x-separated pair is more
+    # correlated than the y-separated one.
+    assert K_eng[0, 1] > 2.0 * K_eng[2, 1]
+
+
+@timer
+def test_grid_gp_helpers():
+    # _upsample_map is exact on the input nodes and doubles the
+    # sampling of a band-limited map.
+    npix = 16
+    lag = np.arange(npix) - npix // 2
+    dx, dy = np.meshgrid(lag, lag)
+    xi = np.exp(-0.5 * (dx**2 / 9.0 + dy**2 / 4.0))
+    for upsample in [1, 2, 3]:
+        up = _upsample_map(xi, upsample)
+        assert up.shape == (npix * upsample, npix * upsample)
+        np.testing.assert_allclose(up[::upsample, ::upsample], xi, atol=1e-12)
+
+    # _symmetrize_kernel_image returns an exactly point-symmetric map
+    # with the unpaired edge lags halved (the grid-space equivalent of
+    # the 0.5 * (K + K.T) symmetrization of the dense path).
+    sym = _symmetrize_kernel_image(xi)
+    assert sym.shape == (npix + 1, npix + 1)
+    np.testing.assert_allclose(sym, sym[::-1, ::-1], atol=1e-14)
+    np.testing.assert_allclose(sym[npix, 1:npix], 0.5 * xi[0, :0:-1], atol=1e-14)
+
+    # The engine solves (K + diag(y_err^2)) alpha = y: check the
+    # residual of the linear system through the engine's own matvec.
+    rng = np.random.default_rng(2)
+    X = rng.uniform(-6.0, 6.0, (400, 2))
+    y = rng.normal(size=400)
+    y_err = np.full(400, 0.5)
+    engine = treegp.GridConvolutionGP(xi, 1.0, upsample=2, cg_rtol=1e-10)
+    engine.solve(X, y, y_err)
+    field = (engine._w_train.T @ engine._alpha).reshape(engine._ny, engine._nx)
+    resid = (
+        engine._w_train @ engine._convolve(field).ravel() + y_err**2 * engine._alpha - y
+    )
+    assert np.linalg.norm(resid) < 1e-8 * np.linalg.norm(y)
+
+    # Prediction at the training points equals K alpha, and far from
+    # the data (beyond the kernel support) the mean field is zero.
+    pred = engine.predict(X)
+    np.testing.assert_allclose(
+        pred, engine._w_train @ engine._convolve(field).ravel(), atol=1e-12
+    )
+    np.testing.assert_allclose(
+        engine.predict(np.array([[100.0, 100.0], [-50.0, 3.0]])), 0.0, atol=1e-14
+    )
+
+    # predict before solve raises, and invalid inputs are rejected.
+    engine.reset()
+    np.testing.assert_raises(RuntimeError, engine.predict, X)
+    np.testing.assert_raises(ValueError, treegp.GridConvolutionGP, xi[:, :-1], 1.0)
+    np.testing.assert_raises(ValueError, treegp.GridConvolutionGP, xi[:-1, :-1], 1.0)
+    np.testing.assert_raises(ValueError, treegp.GridConvolutionGP, xi, 1.0, upsample=0)
+    np.testing.assert_raises(
+        ValueError, treegp.GridConvolutionGP, xi, 1.0, upsample=1.5
+    )
+
+    # Zero measurement errors trigger the conditioning warning.
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        engine.solve(X, y, np.zeros(400))
+    assert any("zero error" in str(wi.message) for wi in w)
+
+    # solve_method validation in GPInterpolation.
+    np.testing.assert_raises(
+        ValueError,
+        treegp.GPInterpolation,
+        optimizer="empirical-2pcf",
+        solve_method="woodbury",
+    )
+    np.testing.assert_raises(
+        ValueError,
+        treegp.GPInterpolation,
+        optimizer="anisotropic",
+        solve_method="spectral",
+    )
+
+
 if __name__ == "__main__":
     test_empirical_2pcf_gp()
-    test_empirical_2pcf_eigenvalue_clipping()
+    test_empirical_2pcf_psd_repair()
     test_empirical_2pcf_extrapolation()
     test_empirical_2pcf_introspection()
     test_empirical_kernel_orientation()
@@ -468,3 +637,7 @@ if __name__ == "__main__":
     test_adaptive_moments()
     test_empirical_2pcf_anisotropic_apod()
     test_empirical_2pcf_validation()
+    test_spectral_vs_direct()
+    test_spectral_per_ccd()
+    test_spectral_orientation()
+    test_grid_gp_helpers()

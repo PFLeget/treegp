@@ -5,9 +5,11 @@
 import treegp
 import numpy as np
 import copy
+import warnings
 
 from .kernels import eval_kernel
 from .kernels import EmpiricalCorrelationKernel
+from .grid_gp import GridConvolutionGP
 
 from sklearn.neighbors import KNeighborsRegressor
 from scipy.linalg import cholesky, cho_solve
@@ -53,10 +55,15 @@ class GPInterpolation(object):
                          hyperparameters, so it is rejected by the fitting optimizers
                          and can only be used with "empirical-2pcf" or "none".
                          As the tabulated kernel is not guaranteed to be
-                         positive semi-definite between arbitrary points, the negative
-                         eigenvalues of the covariance matrix are clipped to zero
-                         (equivalent to the singular value clipping of Gomes et al. 2025).
-                         If the Cholesky decomposition still fails with a LinAlgError,
+                         positive semi-definite between arbitrary points, the
+                         covariance is repaired: the spectral solve method is
+                         positive semi-definite by construction (the negative
+                         Fourier modes of the padded kernel image are clipped
+                         to zero), and the direct solve method adds an
+                         escalating diagonal jitter until the Cholesky
+                         factorization succeeds (both equivalent in spirit to
+                         the singular value clipping of Gomes et al. 2025).
+                         If the factorization still fails with a LinAlgError,
                          increase white_noise.
     :param normalize:    Whether to normalize the interpolation parameters to have a mean of 0.
                          Normally, the parameters being interpolated are not mean 0, so you would
@@ -116,6 +123,27 @@ class GPInterpolation(object):
                          elliptical window when apod_anisotropy="auto", to soften (< 1)
                          or exaggerate (> 1) the anisotropy of the taper. Used only by
                          the "empirical-2pcf" optimizer. [default: 1.]
+    :param solve_method: How to solve for the gaussian process weights and evaluate
+                         predictions with the "empirical-2pcf" optimizer (other
+                         optimizers only accept "direct"). "spectral" exploits the grid
+                         structure of the empirical kernel (see GridConvolutionGP): the
+                         training covariance is never built, the solve is a
+                         preconditioned conjugate gradient where each product costs one
+                         FFT, and predictions sample a precomputed mean field, so time
+                         and memory stay far below the O(N^3) / O(N^2) of the dense
+                         path (minutes and several GB at N ~ 10^4). "direct" is the
+                         dense path: covariance matrix plus Cholesky factorization.
+                         Predictions with return_cov=True always use the dense path.
+                         If None, defaults to "spectral" for the "empirical-2pcf"
+                         optimizer and "direct" otherwise. [default: None]
+    :param spread_upsample: Integer upsampling factor of the spreading grid used by
+                         solve_method="spectral", with respect to the correlation
+                         function grid pixels. Controls the (second order) smoothing
+                         of the kernel by the bilinear spreading. [default: 2]
+    :param cg_rtol:      Relative tolerance of the conjugate gradient solve of
+                         solve_method="spectral". [default: 1e-7]
+    :param cg_maxiter:   Maximum number of conjugate gradient iterations of
+                         solve_method="spectral". [default: 500]
     """
 
     def __init__(
@@ -138,6 +166,10 @@ class GPInterpolation(object):
         apod_radius=None,
         apod_anisotropy=None,
         apod_g_scale=1.0,
+        solve_method=None,
+        spread_upsample=2,
+        cg_rtol=1e-7,
+        cg_maxiter=500,
     ):
         self.normalize = normalize
         self.optimizer = optimizer
@@ -153,6 +185,23 @@ class GPInterpolation(object):
         self.apod_radius = apod_radius
         self.apod_anisotropy = apod_anisotropy
         self.apod_g_scale = apod_g_scale
+        if solve_method is None:
+            solve_method = "spectral" if optimizer == "empirical-2pcf" else "direct"
+        if solve_method not in ["spectral", "direct"]:
+            raise ValueError(
+                "Only spectral and direct are supported for solve_method. "
+                "Current value: %s" % (solve_method)
+            )
+        if solve_method == "spectral" and optimizer != "empirical-2pcf":
+            raise ValueError(
+                "solve_method='spectral' is only available for the "
+                "empirical-2pcf optimizer. Current optimizer: %s" % (optimizer)
+            )
+        self.solve_method = solve_method
+        self.spread_upsample = spread_upsample
+        self.cg_rtol = cg_rtol
+        self.cg_maxiter = cg_maxiter
+        self._engine = None
 
         if self.optimizer == "anisotropic":
             self.robust_fit = True
@@ -223,6 +272,7 @@ class GPInterpolation(object):
         """
         self._alpha = None
         self._fact = None
+        self._engine = None
         if self.optimizer != "none":
             # Hyperparameters estimation using 2-point correlation
             # function information.
@@ -258,6 +308,14 @@ class GPInterpolation(object):
                     apod_g_scale=self.apod_g_scale,
                 )
                 kernel = self._optimizer.optimizer(kernel)
+                if self.solve_method == "spectral":
+                    self._engine = GridConvolutionGP(
+                        self._optimizer._xi_clean,
+                        self._optimizer.pixel_size,
+                        upsample=self.spread_upsample,
+                        cg_rtol=self.cg_rtol,
+                        cg_maxiter=self.cg_maxiter,
+                    )
             # Hyperparameters estimation using maximum likelihood fit.
             if self.optimizer == "log-likelihood":
                 self._optimizer = treegp.log_likelihood(X, y, y_err)
@@ -272,6 +330,23 @@ class GPInterpolation(object):
         """
         y_init = copy.deepcopy(self._y)
         y_err = copy.deepcopy(self._y_err)
+
+        if self._engine is not None and not return_cov:
+            # Spectral solve and predict (see GridConvolutionGP): the
+            # weights are solved once by conjugate gradient, the mean
+            # field is computed once as a grid convolution, and each
+            # predict call only samples it, so its cost is independent
+            # of the number of training points. return_cov=True falls
+            # through to the dense path below.
+            if self._engine._alpha is None:
+                self._engine.solve(
+                    self._X,
+                    y_init - self._mean - self._spatial_average,
+                    y_err,
+                )
+            y_interp = self._engine.predict(X)
+            y_interp += self._mean + self._build_average_meanify(X)
+            return y_interp
 
         y_interp, y_cov = self.return_gp_predict(
             y_init - self._mean - self._spatial_average,
@@ -300,15 +375,59 @@ class GPInterpolation(object):
         """
         HT = kernel.__call__(X2, Y=X1)
         if self._alpha is None:
-            K = kernel.__call__(X1) + np.eye(len(y)) * y_err**2
+            if isinstance(kernel, EmpiricalCorrelationKernel):
+                # The PSD repair of the tabulated kernel is done at the
+                # factorization level below (escalating diagonal
+                # jitter), which is much cheaper than clipping the
+                # eigenvalues of the covariance matrix, so bypass the
+                # clipping when building the training covariance.
+                clip = kernel.clip_eigenvalues
+                kernel.clip_eigenvalues = False
+                try:
+                    K = kernel.__call__(X1)
+                finally:
+                    kernel.clip_eigenvalues = clip
+            else:
+                K = kernel.__call__(X1)
+            K[np.diag_indices_from(K)] += y_err**2
             try:
                 self._fact = cholesky(K, lower=True)
             except np.linalg.LinAlgError as e:
-                raise np.linalg.LinAlgError(
-                    "Cholesky decomposition of the covariance matrix failed "
-                    "(%s). The kernel might not be positive definite; "
-                    "increasing white_noise can help." % (str(e))
+                if not _kernel_contains(kernel, EmpiricalCorrelationKernel):
+                    raise np.linalg.LinAlgError(
+                        "Cholesky decomposition of the covariance matrix failed "
+                        "(%s). The kernel might not be positive definite; "
+                        "increasing white_noise can help." % (str(e))
+                    )
+                # A tabulated correlation function is not guaranteed to
+                # be positive semi-definite between arbitrary points:
+                # add an escalating diagonal jitter until the
+                # factorization succeeds.
+                scale = np.mean(np.diagonal(K))
+                jitter = 1e-6 * scale
+                added = 0.0
+                fact = None
+                for _ in range(8):
+                    K[np.diag_indices_from(K)] += jitter - added
+                    added = jitter
+                    try:
+                        fact = cholesky(K, lower=True)
+                        break
+                    except np.linalg.LinAlgError:
+                        jitter *= 10.0
+                if fact is None:
+                    raise np.linalg.LinAlgError(
+                        "Cholesky decomposition of the covariance matrix "
+                        "failed even with a diagonal jitter of %.3e (%s). "
+                        "Increasing white_noise can help." % (added, str(e))
+                    )
+                warnings.warn(
+                    "The covariance matrix of the tabulated kernel is not "
+                    "positive semi-definite: a diagonal jitter of %.3e "
+                    "(%.2f%% of its mean diagonal) was added to make the "
+                    "Cholesky factorization succeed." % (added, 100.0 * added / scale)
                 )
+                self._fact = fact
             self._alpha = cho_solve((self._fact, True), y)
         y_predict = np.dot(HT, self._alpha.reshape((len(self._alpha), 1))).T[0]
         if return_cov:
@@ -351,6 +470,8 @@ class GPInterpolation(object):
         # input data.
         self._alpha = None
         self._fact = None
+        if self._engine is not None:
+            self._engine.reset()
 
     def _build_average_meanify(self, X):
         """Compute spatial average from meanify output for a given coordinate using KN interpolation.
