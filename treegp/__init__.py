@@ -10,10 +10,13 @@ from .gp_interp import GPInterpolation
 
 from .two_pcf import two_pcf
 from .log_likelihood import log_likelihood
+from .empirical_2pcf import empirical_2pcf
+from .grid_gp import GridConvolutionGP
 
 from .kernels import AnisotropicRBF
 from .kernels import VonKarman
 from .kernels import AnisotropicVonKarman
+from .kernels import EmpiricalCorrelationKernel
 from .kernels import eval_kernel
 
 from .meanify import meanify, MeanifyStream
@@ -27,9 +30,12 @@ __all__ = [
     "GPInterpolation",
     "two_pcf",
     "log_likelihood",
+    "empirical_2pcf",
+    "GridConvolutionGP",
     "AnisotropicRBF",
     "VonKarman",
     "AnisotropicVonKarman",
+    "EmpiricalCorrelationKernel",
     "eval_kernel",
     "meanify",
     "MeanifyStream",

@@ -5,6 +5,7 @@
 import numpy as np
 from scipy.spatial.distance import pdist, cdist, squareform
 from scipy import special
+from scipy.interpolate import RegularGridInterpolator
 from sklearn.gaussian_process.kernels import (
     StationaryKernelMixin,
     NormalizedKernelMixin,
@@ -418,3 +419,162 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
     @property
     def bounds(self):
         return self._bounds
+
+
+class EmpiricalCorrelationKernel(StationaryKernelMixin, Kernel):
+    """A tabulated stationary anisotropic kernel built from a measured
+    2d 2-point correlation function, following Gomes et al. (2025)
+    (AJ 170:361, doi:10.3847/1538-3881/ae1a7b).
+
+    The kernel has no free hyperparameters (theta is empty): it evaluates
+    K(X, Y)[i, j] = xi(X_i - Y_j) by bilinear interpolation of the given
+    correlation function grid, and is zero beyond the grid (compact
+    support).
+
+    A tabulated correlation function is not guaranteed to be positive
+    semi-definite between arbitrary points, so by default the covariance
+    matrices built when Y is None are projected onto the closest positive
+    semi-definite matrix by clipping their negative eigenvalues to zero.
+    This is equivalent to the singular value clipping used by
+    Gomes et al. (2025).
+
+    Input is expected to be 2-dimensional, i.e. X.shape = (n_samples, 2).
+
+    :param x_grid:  Lag coordinates of the grid columns, zero lag
+                    at index len(x_grid)//2. (nx,) ndarray
+    :param y_grid:  Lag coordinates of the grid rows, zero lag
+                    at index len(y_grid)//2. (ny,) ndarray
+    :param xi_grid: 2d correlation function in treecorr TwoD layout,
+                    i.e. indexed [iy, ix]. (ny, nx) ndarray
+    :param clip_eigenvalues: Whether to clip the negative eigenvalues of
+                    the covariance matrices built when Y is None.
+                    [default: True]
+    """
+
+    # Maximum number of pair lags interpolated at once by __call__, to
+    # bound the size of the temporary arrays (a few 100 MB) instead of
+    # scaling with n_samples^2.
+    _chunk_size = 4_000_000
+
+    def __init__(self, x_grid, y_grid, xi_grid, clip_eigenvalues=True):
+        self.x_grid = np.asarray(x_grid)
+        self.y_grid = np.asarray(y_grid)
+        self.xi_grid = np.asarray(xi_grid)
+        self.clip_eigenvalues = clip_eigenvalues
+        if self.xi_grid.shape != (len(self.y_grid), len(self.x_grid)):
+            raise ValueError(
+                "xi_grid shape %s does not match (len(y_grid), len(x_grid)) = %s"
+                % (str(self.xi_grid.shape), str((len(self.y_grid), len(self.x_grid))))
+            )
+        # xi_grid is indexed [iy, ix], while the interpolation axes are
+        # (x lag, y lag), hence the transpose.
+        self._z = np.ascontiguousarray(self.xi_grid.T)
+        # Uniform grids (the empirical_2pcf solver always produces them)
+        # take a direct vectorized bilinear interpolation, much faster
+        # than the generic RegularGridInterpolator, which is kept as a
+        # fallback for non-uniform grids.
+        steps_x = np.diff(self.x_grid)
+        steps_y = np.diff(self.y_grid)
+        uniform = (
+            len(steps_x) > 0
+            and len(steps_y) > 0
+            and np.all(steps_x > 0)
+            and np.all(steps_y > 0)
+            and np.allclose(steps_x, steps_x[0])
+            and np.allclose(steps_y, steps_y[0])
+        )
+        if uniform:
+            self._interp = None
+            self._hx = steps_x[0]
+            self._hy = steps_y[0]
+        else:
+            self._interp = RegularGridInterpolator(
+                (self.x_grid, self.y_grid),
+                self._z,
+                method="linear",
+                bounds_error=False,
+                fill_value=0.0,
+            )
+
+    def _eval_lags(self, dx, dy):
+        """Bilinear interpolation of the tabulated correlation function
+        at the given (dx, dy) lags, zero outside the grid.
+
+        :param dx, dy: Lags where to evaluate the correlation function.
+                       ndarrays of matching shape.
+        """
+        if self._interp is not None:
+            return self._interp(np.stack([dx, dy], axis=-1))
+        nx = len(self.x_grid)
+        ny = len(self.y_grid)
+        gx = (dx - self.x_grid[0]) / self._hx
+        gy = (dy - self.y_grid[0]) / self._hy
+        inside = (gx >= 0.0) & (gx <= nx - 1) & (gy >= 0.0) & (gy <= ny - 1)
+        ix = np.clip(np.floor(gx).astype(np.intp), 0, nx - 2)
+        iy = np.clip(np.floor(gy).astype(np.intp), 0, ny - 2)
+        tx = gx - ix
+        ty = gy - iy
+        z = self._z
+        out = (
+            (1.0 - tx) * (1.0 - ty) * z[ix, iy]
+            + tx * (1.0 - ty) * z[ix + 1, iy]
+            + (1.0 - tx) * ty * z[ix, iy + 1]
+            + tx * ty * z[ix + 1, iy + 1]
+        )
+        return np.where(inside, out, 0.0)
+
+    def _pair_covariance(self, X, Y):
+        """Evaluate K[i, j] = xi(X_i - Y_j) in chunks of rows, so that
+        the temporary arrays never scale with len(X) * len(Y)."""
+        n1 = len(X)
+        n2 = len(Y)
+        K = np.empty((n1, n2))
+        chunk = max(1, self._chunk_size // max(n2, 1))
+        for start in range(0, n1, chunk):
+            end = min(start + chunk, n1)
+            dx = X[start:end, 0][:, np.newaxis] - Y[np.newaxis, :, 0]
+            dy = X[start:end, 1][:, np.newaxis] - Y[np.newaxis, :, 1]
+            K[start:end] = self._eval_lags(dx, dy)
+        return K
+
+    @property
+    def xi0(self):
+        """Zero-lag value of the correlation function, i.e. the variance
+        of the field."""
+        return float(self._eval_lags(np.zeros(1), np.zeros(1))[0])
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+        if eval_gradient:
+            raise ValueError("Gradient can not be evaluated.")
+        X = np.atleast_2d(X)
+        if np.shape(X)[1] != 2:
+            raise ValueError(
+                "EmpiricalCorrelationKernel supports only 2d coordinates. "
+                "Current ndim: %i" % (np.shape(X)[1])
+            )
+        if Y is None:
+            K = self._pair_covariance(X, X)
+            # The tabulated correlation function is point-symmetric except
+            # for its first row/column (the most negative lag has no
+            # positive counterpart on the grid), so symmetrize to get an
+            # exactly symmetric covariance matrix.
+            K = 0.5 * (K + K.T)
+            if self.clip_eigenvalues:
+                eigenvalues, eigenvectors = np.linalg.eigh(K)
+                if np.any(eigenvalues < 0.0):
+                    K = (eigenvectors * np.clip(eigenvalues, 0.0, None)).dot(
+                        eigenvectors.T
+                    )
+                    K = 0.5 * (K + K.T)
+        else:
+            Y = np.atleast_2d(Y)
+            K = self._pair_covariance(X, Y)
+        return K
+
+    def diag(self, X):
+        return np.full(len(X), self.xi0)
+
+    def __repr__(self):
+        return "{0}(npix={1!r}, xi0={2:.4g})".format(
+            self.__class__.__name__, self.xi_grid.shape, self.xi0
+        )
