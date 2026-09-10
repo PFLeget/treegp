@@ -227,9 +227,102 @@ def test_meanify_backward_compat():
     assert stream.params0 is not None
 
 
+@timer
+def test_robust_helpers():
+    """Test the biweight and MAD-clipped median helpers used by meanify."""
+    from treegp.meanify import biweight, median_clipped
+
+    # Empty sample -> nan, without any warning (binned_statistic_2d probes
+    # the callable with an empty array for bins without data).
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert np.isnan(biweight(np.array([])))
+        assert np.isnan(median_clipped(np.array([])))
+
+    # Degenerate samples.
+    assert biweight(np.array([3.0])) == 3.0
+    assert median_clipped(np.array([3.0])) == 3.0
+    np.testing.assert_allclose(biweight(np.ones(5) * 7.0), 7.0)
+    np.testing.assert_allclose(median_clipped(np.ones(5) * 7.0), 7.0)
+
+    # Gaussian sample with 10% of strong asymmetric outliers.
+    np.random.seed(42)
+    sample = np.random.normal(0.0, 1.0, size=1000)
+    sample[:100] += 8.0
+    m_mean = np.mean(sample)
+    m_median = np.median(sample)
+    m_biweight = biweight(sample)
+    m_clipped = median_clipped(sample)
+    assert abs(m_mean) > 0.6
+    assert abs(m_median) > 0.1
+    assert abs(m_biweight) < 0.1
+    assert abs(m_clipped) < 0.1
+    assert abs(m_biweight) < abs(m_median)
+    assert abs(m_clipped) < abs(m_median)
+
+    # No outliers: both are close to the mean and the clipping is mild.
+    sample = np.random.normal(0.0, 1.0, size=1000)
+    np.testing.assert_allclose(biweight(sample), np.mean(sample), atol=0.05)
+    np.testing.assert_allclose(median_clipped(sample), np.mean(sample), atol=0.1)
+
+    # Unknown statistic raises.
+    try:
+        treegp.meanify(statistics="not_a_stat")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("meanify should reject an unknown statistic")
+
+
+@timer
+def test_meanify_robust_statistics():
+    """Test biweight and median_clipped statistics in meanify."""
+    np.random.seed(42)
+    npoints = 20000
+    coords = np.random.uniform(0, 1000, size=(npoints, 2))
+    params = np.random.normal(100.0, 10.0, size=npoints)
+    # 10% of strong asymmetric outliers.
+    params[: npoints // 10] += 100.0
+
+    def run(statistics):
+        m = treegp.meanify(bin_spacing=100.0, statistics=statistics)
+        m.add_field(coords, params)
+        m.meanify(lu_min=0, lu_max=1000, lv_min=0, lv_max=1000)
+        return m
+
+    m_mean = run("mean")
+    err_mean = np.max(np.abs(m_mean.params0 - 100.0))
+    assert err_mean > 5.0  # mean is pulled by the outliers
+
+    for statistics in ["biweight", "median_clipped"]:
+        # Streaming is only supported for "mean", even when bounds are given.
+        m = treegp.meanify(
+            bin_spacing=100.0, statistics=statistics, bounds=(0, 1000, 0, 1000)
+        )
+        assert not m._use_streaming, "%s should use legacy mode" % statistics
+
+        m = run(statistics)
+        assert np.all(np.isfinite(m.params0))
+        assert np.all(m.wrms0 == 0.0)
+        assert len(m.params0) == len(m_mean.params0)
+        np.testing.assert_allclose(m.coords0, m_mean.coords0)
+        np.testing.assert_allclose(m.params0, 100.0, atol=err_mean / 2.0)
+        m.save_results(
+            name_output=os.path.join("outputs", "mean_gp_stat_%s.fits" % statistics)
+        )
+
+    # Tuning parameters are forwarded.
+    m = treegp.meanify(statistics="median_clipped", clip_nsigma=2.0, clip_maxiters=2)
+    assert m.clip_nsigma == 2.0 and m.clip_maxiters == 2
+    m = treegp.meanify(statistics="biweight", biweight_c=9.0)
+    assert m.biweight_c == 9.0
+
+
 if __name__ == "__main__":
     test_meanify()
     test_gpinterp_meanify()
     test_meanify_streaming()
     test_meanify_median_uses_legacy()
     test_meanify_backward_compat()
+    test_robust_helpers()
+    test_meanify_robust_statistics()
