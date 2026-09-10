@@ -4,8 +4,58 @@
 
 import numpy as np
 from scipy.stats import binned_statistic_2d
+from astropy.stats import biweight_location
 import fitsio
 import copy
+
+
+def biweight(x, c=6.0):
+    """Biweight location estimate of a 1d sample (Beers, Flynn & Gebhardt
+    1990, AJ 100, 32). One-step Tukey biweight centered on the median with
+    a MAD-based scale; points beyond ``c * MAD`` get zero weight.
+
+    Returns nan on an empty sample, as required by ``binned_statistic_2d``
+    for bins without data.
+
+    :param x: 1d array-like sample.
+    :param c: Tuning constant. (default: 6.)
+    """
+    x = np.asarray(x, dtype=float)
+    if x.size == 0:
+        return np.nan
+    return float(biweight_location(x, c=c))
+
+
+def median_clipped(x, nsigma=3.0, maxiters=5):
+    """Median of a 1d sample with iterative MAD clipping.
+
+    At each iteration the median and the normalized MAD
+    (``1.4826 * MAD``, i.e. sigma for a Gaussian) of the surviving points
+    are computed, and points farther than ``nsigma`` sigma from the median
+    are rejected. Iterations stop when no more points are rejected, when
+    the MAD is zero, or after ``maxiters`` iterations.
+
+    Returns nan on an empty sample, as required by ``binned_statistic_2d``
+    for bins without data.
+
+    :param x:        1d array-like sample.
+    :param nsigma:   Clipping threshold in units of normalized MAD. (default: 3.)
+    :param maxiters: Maximum number of clipping iterations. (default: 5)
+    """
+    x = np.asarray(x, dtype=float)
+    if x.size == 0:
+        return np.nan
+    mask = np.ones(x.size, dtype=bool)
+    for _ in range(maxiters):
+        med = np.median(x[mask])
+        mad = np.median(np.abs(x[mask] - med))
+        if mad == 0:
+            break
+        new_mask = mask & (np.abs(x - med) <= nsigma * 1.4826 * mad)
+        if new_mask.sum() == mask.sum():
+            break
+        mask = new_mask
+    return float(np.median(x[mask]))
 
 
 class meanify(object):
@@ -13,21 +63,45 @@ class meanify(object):
 
     :param bin_spacing: Bin_size, resolution on the mean function. (default=120.)
     :param statistics:  Statistics used to compute the mean. (default=mean)
-                        Supported: "mean", "median", "weighted"
+                        Supported: "mean", "median", "weighted", "biweight",
+                        "median_clipped".
+                        "biweight" is the outlier-resistant biweight location
+                        of Beers, Flynn & Gebhardt 1990 (see ``biweight``).
+                        "median_clipped" is a median with iterative MAD
+                        clipping (see ``median_clipped``). For both, wrms is
+                        set to zero, as for "mean" and "median".
     :param bounds:      Optional tuple (u_min, u_max, v_min, v_max).
                         When provided with statistics="mean", enables O(1) memory
                         streaming mode using accumulators instead of storing all data.
+    :param biweight_c:    Tuning constant of the biweight. (default: 6.)
+    :param clip_nsigma:   Clipping threshold, in normalized MAD units, used by
+                          "median_clipped". (default: 3.)
+    :param clip_maxiters: Maximum number of clipping iterations used by
+                          "median_clipped". (default: 5)
     """
 
-    def __init__(self, bin_spacing=120.0, statistics="mean", bounds=None):
+    SUPPORTED_STATISTICS = ["mean", "median", "weighted", "biweight", "median_clipped"]
+
+    def __init__(
+        self,
+        bin_spacing=120.0,
+        statistics="mean",
+        bounds=None,
+        biweight_c=6.0,
+        clip_nsigma=3.0,
+        clip_maxiters=5,
+    ):
         self.bin_spacing = bin_spacing
 
-        if statistics not in ["mean", "median", "weighted"]:
+        if statistics not in self.SUPPORTED_STATISTICS:
             raise ValueError(
-                "%s is not a supported statistic (only mean, weighted, and median are currently supported)"
-                % (statistics)
+                "%s is not a supported statistic (supported: %s)"
+                % (statistics, ", ".join(self.SUPPORTED_STATISTICS))
             )
         self.stat_used = statistics
+        self.biweight_c = biweight_c
+        self.clip_nsigma = clip_nsigma
+        self.clip_maxiters = clip_maxiters
 
         # Determine if we can use streaming mode
         self._use_streaming = (statistics == "mean") and (bounds is not None)
@@ -220,12 +294,26 @@ class meanify(object):
             )
             wrms = np.sqrt(wvar)
         else:
+            if self.stat_used == "biweight":
+
+                def stat(x):
+                    return biweight(x, c=self.biweight_c)
+
+            elif self.stat_used == "median_clipped":
+
+                def stat(x):
+                    return median_clipped(
+                        x, nsigma=self.clip_nsigma, maxiters=self.clip_maxiters
+                    )
+
+            else:
+                stat = self.stat_used
             average, xedge, yedge, bin_target = binned_statistic_2d(
                 coords[:, 0],
                 coords[:, 1],
                 params,
                 bins=binning,
-                statistic=self.stat_used,
+                statistic=stat,
             )
             wrms = np.zeros_like(average)
         average = average.T
