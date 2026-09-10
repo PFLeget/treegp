@@ -8,6 +8,8 @@ from astropy.stats import biweight_location
 import fitsio
 import copy
 
+from .smooth import savgol2d
+
 
 def biweight(x, c=6.0):
     """Biweight location estimate of a 1d sample (Beers, Flynn & Gebhardt
@@ -78,6 +80,13 @@ class meanify(object):
                           "median_clipped". (default: 3.)
     :param clip_maxiters: Maximum number of clipping iterations used by
                           "median_clipped". (default: 5)
+
+    After ``meanify()``, the 2d grids ``_average``, ``_wrms`` and ``_count``
+    (number of points per bin) are available, together with the sparse
+    outputs ``coords0``, ``params0``, ``wrms0`` used by GPInterpolation.
+    The grid can be denoised with ``smooth()`` (2d Savitzky-Golay, see
+    ``treegp.savgol2d``), and a saved output can be reloaded with
+    ``meanify.read_results()`` to be smoothed and saved again.
     """
 
     SUPPORTED_STATISTICS = ["mean", "median", "weighted", "biweight", "median_clipped"]
@@ -102,6 +111,7 @@ class meanify(object):
         self.biweight_c = biweight_c
         self.clip_nsigma = clip_nsigma
         self.clip_maxiters = clip_maxiters
+        self._count = None
 
         # Determine if we can use streaming mode
         self._use_streaming = (statistics == "mean") and (bounds is not None)
@@ -236,13 +246,10 @@ class meanify(object):
         # Meshgrid (legacy uses default 'xy' indexing -> returns (nv, nu))
         self._u0, self._v0 = np.meshgrid(u_centers, v_centers)
 
-        # Sparse output
-        count_T = self._grid_count.T
-        valid_bins = (count_T > 0) & np.isfinite(self._average)
+        self._count = self._grid_count.T.copy()
 
-        self.coords0 = np.column_stack((self._u0[valid_bins], self._v0[valid_bins]))
-        self.params0 = self._average[valid_bins]
-        self.wrms0 = self._wrms[valid_bins]
+        # Sparse output (empty bins have nan average and are dropped)
+        self._set_sparse_outputs()
 
     def _meanify_legacy(self, lu_min, lu_max, lv_min, lv_max):
         """Compute mean using legacy scipy-based approach."""
@@ -267,9 +274,6 @@ class meanify(object):
             np.linspace(lu_min, lu_max, nbin_u),
             np.linspace(lv_min, lv_max, nbin_v),
         ]
-        nbinning = (len(binning[0]) - 1) * (len(binning[1]) - 1)
-        Filter = np.array([True] * nbinning)
-
         if self.stat_used == "weighted":
             sum_wpp, u0, v0, bin_target = binned_statistic_2d(
                 coords[:, 0],
@@ -316,35 +320,140 @@ class meanify(object):
                 statistic=stat,
             )
             wrms = np.zeros_like(average)
-        average = average.T
-        wrms = wrms.T
-        self._average = copy.deepcopy(average)
-        self._wrms = wrms
-        average = average.reshape(-1)
-        wrms = wrms.reshape(-1)
-        Filter &= np.isfinite(average).reshape(-1)
-        Filter &= np.isfinite(wrms).reshape(-1)
-        params0 = copy.deepcopy(average)
-        u0 = copy.deepcopy(xedge)
-        v0 = copy.deepcopy(yedge)
-        wrms0 = wrms
+
+        # Number of points per bin (same grid), used for masking / weighting
+        # when smoothing.
+        count, xedge, yedge, bin_target = binned_statistic_2d(
+            coords[:, 0],
+            coords[:, 1],
+            params,
+            bins=binning,
+            statistic="count",
+        )
+
+        self._average = copy.deepcopy(average.T)
+        self._wrms = wrms.T
+        self._count = count.T.astype(np.int64)
 
         # get center of each bin
-        u0 = u0[:-1] + (u0[1] - u0[0]) / 2.0
-        v0 = v0[:-1] + (v0[1] - v0[0]) / 2.0
+        u0 = xedge[:-1] + (xedge[1] - xedge[0]) / 2.0
+        v0 = yedge[:-1] + (yedge[1] - yedge[0]) / 2.0
         u0, v0 = np.meshgrid(u0, v0)
         self._u0 = u0
         self._v0 = v0
         self._xedge = xedge
         self._yedge = yedge
 
-        coords0 = np.array([u0.reshape(-1), v0.reshape(-1)]).T
-
         # remove any entries with nan (counts == 0 and non finite value in
         # the 2D statistic computation)
+        self._set_sparse_outputs()
+
+    def _set_sparse_outputs(self):
+        """Build coords0, params0 and wrms0 from the 2d grids, keeping only
+        the bins where both the average and the wrms are finite."""
+        average = self._average.reshape(-1)
+        wrms = self._wrms.reshape(-1)
+        Filter = np.isfinite(average) & np.isfinite(wrms)
+        coords0 = np.array([self._u0.reshape(-1), self._v0.reshape(-1)]).T
         self.coords0 = coords0[Filter]
-        self.params0 = params0[Filter]
-        self.wrms0 = wrms0[Filter]
+        self.params0 = average[Filter]
+        self.wrms0 = wrms[Filter]
+
+    def smooth(
+        self,
+        window=5,
+        order=2,
+        min_count=None,
+        weight_by_count=False,
+        fill_empty=False,
+    ):
+        """
+        Denoise the 2d mean function with a 2d Savitzky-Golay filter.
+
+        A polynomial of total degree ``order`` is fitted in each
+        ``window`` x ``window`` neighbourhood of the grid (see
+        ``treegp.savgol2d``). Empty bins are ignored by the fit, so holes and
+        borders are handled without bias. The smoothed grid replaces
+        ``_average`` and the sparse outputs (``coords0``, ``params0``,
+        ``wrms0``) are rebuilt from it; the unsmoothed grid is kept in
+        ``_average_raw``. Must be called after ``meanify()`` or
+        ``read_results()``. Returns ``self`` so that calls can be chained.
+
+        :param window:          Odd width of the square window, in bins.
+                                Should stay below the smallest structure to
+                                preserve (e.g. the tree rings period).
+                                (default: 5)
+        :param order:           Polynomial order. (default: 2)
+        :param min_count:       Bins with fewer points than this are treated
+                                as empty before smoothing (removes noisy bins
+                                with very few stars). Requires per-bin
+                                counts. (default: None)
+        :param weight_by_count: Weight bins by their number of points in the
+                                local fit (inverse-variance weighting).
+                                Requires per-bin counts. (default: False)
+        :param fill_empty:      Also fill empty bins with the local polynomial
+                                estimate when enough neighbours are
+                                available; their wrms is set to 0.
+                                (default: False)
+        """
+        if not hasattr(self, "_average"):
+            raise RuntimeError("Call meanify() or read_results() before smooth().")
+        if (min_count is not None or weight_by_count) and self._count is None:
+            raise ValueError(
+                "min_count and weight_by_count require per-bin counts, "
+                "which are not available in this meanify output."
+            )
+
+        z = np.array(self._average, dtype=float)
+        if min_count is not None:
+            z[self._count < min_count] = np.nan
+        weights = self._count.astype(float) if weight_by_count else None
+
+        if not hasattr(self, "_average_raw"):
+            self._average_raw = self._average
+        self._average = savgol2d(
+            z, window=window, order=order, weights=weights, fill_empty=fill_empty
+        )
+        if fill_empty:
+            filled = np.isfinite(self._average) & ~np.isfinite(self._wrms)
+            self._wrms = np.where(filled, 0.0, self._wrms)
+        self._set_sparse_outputs()
+        return self
+
+    @classmethod
+    def read_results(cls, name_input):
+        """
+        Load a mean function written by ``save_results``.
+
+        The returned object holds the 2d grids and the sparse outputs, so it
+        can be smoothed with ``smooth()`` and written again with
+        ``save_results()``. Files written before per-bin counts were stored
+        load with ``_count = None``.
+
+        :param name_input: Name of the fits file written by save_results.
+        """
+        with fitsio.FITS(name_input, "r") as f:
+            hdu = f["average_solution"]
+            colnames = hdu.get_colnames()
+            data = hdu.read()
+
+        u0 = data["_U0"][0]
+        v0 = data["_V0"][0]
+        du = u0[0, 1] - u0[0, 0]
+        dv = v0[1, 0] - v0[0, 0]
+
+        obj = cls(bin_spacing=du)
+        obj._average = data["_AVERAGE"][0]
+        obj._wrms = data["_WRMS"][0]
+        obj._u0 = u0
+        obj._v0 = v0
+        obj._xedge = np.append(u0[0, :] - du / 2.0, u0[0, -1] + du / 2.0)
+        obj._yedge = np.append(v0[:, 0] - dv / 2.0, v0[-1, 0] + dv / 2.0)
+        obj._count = data["_COUNT"][0] if "_COUNT" in colnames else None
+        obj.coords0 = data["COORDS0"][0]
+        obj.params0 = data["PARAMS0"][0]
+        obj.wrms0 = data["WRMS0"][0]
+        return obj
 
     def save_results(self, name_output="mean_gp.fits"):
         """
@@ -361,6 +470,8 @@ class meanify(object):
             ("_U0", self._u0.dtype, self._u0.shape),
             ("_V0", self._v0.dtype, self._v0.shape),
         ]
+        if self._count is not None:
+            dtypes.append(("_COUNT", self._count.dtype, self._count.shape))
         data = np.empty(1, dtype=dtypes)
 
         data["COORDS0"] = self.coords0
@@ -370,6 +481,8 @@ class meanify(object):
         data["_WRMS"] = self._wrms
         data["_U0"] = self._u0
         data["_V0"] = self._v0
+        if self._count is not None:
+            data["_COUNT"] = self._count
 
         with fitsio.FITS(name_output, "rw", clobber=True) as f:
             f.write_table(data, extname="average_solution")
