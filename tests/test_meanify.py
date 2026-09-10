@@ -318,6 +318,146 @@ def test_meanify_robust_statistics():
     assert m.biweight_c == 9.0
 
 
+def _quadratic_truth(coords):
+    return (
+        0.02 + 5e-8 * (coords[:, 0] - 500.0) ** 2 + 5e-8 * (coords[:, 1] - 500.0) ** 2
+    )
+
+
+@timer
+def test_meanify_counts_and_read_results():
+    """Per-bin counts in both modes, and round trip through the fits file."""
+    np.random.seed(42)
+    npoints = 5000
+    coords = np.random.uniform(0, 1000, size=(npoints, 2))
+    params = np.random.normal(100.0, 10.0, size=npoints)
+    params[:10] = np.nan  # dropped by add_field
+    bounds = (0, 1000, 0, 1000)
+
+    legacy = treegp.meanify(bin_spacing=100.0, statistics="biweight")
+    legacy.add_field(coords, params)
+    legacy.meanify(*bounds)
+
+    stream = treegp.meanify(bin_spacing=100.0, statistics="mean", bounds=bounds)
+    stream.add_field(coords, params)
+    stream.meanify()
+
+    for m in [legacy, stream]:
+        assert m._count.shape == m._average.shape
+        assert m._count.sum() == npoints - 10
+        assert m._count.dtype.kind == "i"
+    np.testing.assert_array_equal(legacy._count, stream._count)
+
+    # Round trip.
+    name = os.path.join("outputs", "mean_gp_counts.fits")
+    legacy.save_results(name_output=name)
+    loaded = treegp.meanify.read_results(name)
+    np.testing.assert_array_equal(loaded._count, legacy._count)
+    np.testing.assert_allclose(loaded._average, legacy._average, equal_nan=True)
+    np.testing.assert_allclose(loaded._wrms, legacy._wrms, equal_nan=True)
+    np.testing.assert_allclose(loaded._u0, legacy._u0)
+    np.testing.assert_allclose(loaded._v0, legacy._v0)
+    np.testing.assert_allclose(loaded._xedge, legacy._xedge, atol=1e-9)
+    np.testing.assert_allclose(loaded._yedge, legacy._yedge, atol=1e-9)
+    np.testing.assert_allclose(loaded.coords0, legacy.coords0)
+    np.testing.assert_allclose(loaded.params0, legacy.params0)
+    np.testing.assert_allclose(loaded.wrms0, legacy.wrms0)
+    np.testing.assert_allclose(loaded.bin_spacing, legacy._xedge[1] - legacy._xedge[0])
+
+    # Files written before counts existed load with _count = None.
+    legacy._count = None
+    name_old = os.path.join("outputs", "mean_gp_nocounts.fits")
+    legacy.save_results(name_output=name_old)
+    with fitsio.FITS(name_old) as f:
+        assert "_COUNT" not in f["average_solution"].get_colnames()
+    loaded = treegp.meanify.read_results(name_old)
+    assert loaded._count is None
+    for kwargs in [dict(min_count=1), dict(weight_by_count=True)]:
+        try:
+            loaded.smooth(**kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("smooth should require counts for %s" % kwargs)
+    loaded.smooth()  # unweighted smoothing still works
+    assert np.all(np.isfinite(loaded.params0))
+
+
+@timer
+def test_meanify_smooth():
+    """smooth() reduces the noise of the mean function on a quadratic field."""
+    np.random.seed(42)
+    npoints = 40000
+    coords = np.random.uniform(0, 1000, size=(npoints, 2))
+    params = _quadratic_truth(coords) + np.random.normal(0.0, 0.05, size=npoints)
+
+    def run():
+        m = treegp.meanify(bin_spacing=20.0, statistics="mean")
+        m.add_field(coords, params)
+        m.meanify(0, 1000, 0, 1000)
+        return m
+
+    m = run()
+    nbins_raw = len(m.params0)
+    err_raw = np.std(m.params0 - _quadratic_truth(m.coords0))
+    average_raw = m._average.copy()
+
+    out = m.smooth(window=5, order=2)
+    assert out is m
+    np.testing.assert_array_equal(m._average_raw, average_raw)
+    assert m._average.shape == average_raw.shape
+    assert len(m.params0) == len(m.coords0) == len(m.wrms0) == nbins_raw
+    err_smooth = np.std(m.params0 - _quadratic_truth(m.coords0))
+    assert err_smooth < 0.6 * err_raw
+    # A second call keeps the original raw grid.
+    m.smooth(window=3, order=1)
+    np.testing.assert_array_equal(m._average_raw, average_raw)
+
+    # min_count masks low-count bins, which stay empty unless fill_empty.
+    m2 = run()
+    min_count = 12
+    expected = np.sum((m2._count >= min_count) & np.isfinite(m2._average))
+    m2.smooth(window=5, order=2, min_count=min_count)
+    # Masked bins stay empty; a few kept bins next to the border may also
+    # lack enough valid neighbours for the fit and drop out.
+    assert expected - 5 <= len(m2.params0) <= expected < nbins_raw
+    kept = np.isfinite(m2._average)
+    assert np.all(m2._count[kept] >= min_count)
+    m3 = run()
+    m3.smooth(window=5, order=2, min_count=min_count, fill_empty=True)
+    assert len(m3.params0) >= 0.99 * nbins_raw
+    assert np.all(np.isfinite(m3.wrms0))
+    err_filled = np.std(m3.params0 - _quadratic_truth(m3.coords0))
+    assert err_filled < 0.6 * err_raw
+
+    # Count weighting runs and is also less noisy than the raw map.
+    m4 = run()
+    m4.smooth(window=5, order=2, weight_by_count=True)
+    err_w = np.std(m4.params0 - _quadratic_truth(m4.coords0))
+    assert err_w < 0.6 * err_raw
+
+    # Chained read / smooth / save.
+    name = os.path.join("outputs", "mean_gp_smooth.fits")
+    m5 = run()
+    m5.save_results(name_output=name)
+    smoothed = treegp.meanify.read_results(name).smooth(window=5, order=2)
+    np.testing.assert_allclose(
+        smoothed.params0, run().smooth(window=5, order=2).params0
+    )
+    name2 = os.path.join("outputs", "mean_gp_smooth2.fits")
+    smoothed.save_results(name_output=name2)
+    reloaded = treegp.meanify.read_results(name2)
+    np.testing.assert_allclose(reloaded.params0, smoothed.params0)
+
+    # smooth() before meanify() is an error.
+    try:
+        treegp.meanify().smooth()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("smooth should require meanify() first")
+
+
 if __name__ == "__main__":
     test_meanify()
     test_gpinterp_meanify()
@@ -326,3 +466,5 @@ if __name__ == "__main__":
     test_meanify_backward_compat()
     test_robust_helpers()
     test_meanify_robust_statistics()
+    test_meanify_counts_and_read_results()
+    test_meanify_smooth()

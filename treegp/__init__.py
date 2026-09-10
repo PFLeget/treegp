@@ -20,6 +20,7 @@ from .kernels import EmpiricalCorrelationKernel
 from .kernels import eval_kernel
 
 from .meanify import meanify, MeanifyStream
+from .smooth import savgol2d
 from .meanify_healpix import meanify_healpix
 
 from .utils import comp_eb, comp_eb_treecorr
@@ -39,6 +40,7 @@ __all__ = [
     "eval_kernel",
     "meanify",
     "MeanifyStream",
+    "savgol2d",
     "meanify_healpix",
     "comp_eb",
     "comp_eb_treecorr",
