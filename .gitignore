@@ -37,8 +37,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/   # anchored: slides/js/lib holds the vendored reveal.js / Plotly / KaTeX of the slide deck
+/lib64/
 parts/
 sdist/
 var/
