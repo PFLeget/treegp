@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TURBO-GP, step by step</title>
+<link rel="stylesheet" href="js/lib/reveal.min.css">
+<link rel="stylesheet" href="js/lib/reveal-white.min.css">
+<link rel="stylesheet" href="js/lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css?v=5">
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ================================================================ 1. title -->
+<section data-demo="none">
+  <h1>TURBO-GP, step by step</h1>
+  <h3>How a measured correlation function becomes a fast correction of atmospheric turbulence in Rubin astrometry</h3>
+  <p class="small">TUrbulence Removal By fourier-Optimized Gaussian Process &mdash; companion to <a href="https://rtn-129.lsst.io">RTN-129</a> (Léget et al.), implemented in <a href="https://github.com/PFLeget/treegp">treegp</a>.</p>
+  <p class="small">The method: the empirical kernel of Gomes et al. 2025, inside treegp, solved on a grid with the FFT and conjugate gradient.</p>
+  <p class="tiny">Arrow keys to navigate (&darr; opens the real-data companion of a slide), <code>Esc</code> for the overview. Every slide has a live plot: move the sliders, click, drag.</p>
+  <p class="tiny"><span class="tag real">real visit</span> pieces come from a simulated Rubin visit (<span id="title-visit"></span>) processed by treegp; <span class="tag toy">toy</span> pieces are small synthetic examples computed live in your browser.</p>
+</section>
+
+<!-- ================================================================ 2. the field -->
+<section data-demo="field">
+  <h2>1. The field we fight <span class="tag real">real visit</span></h2>
+  <div class="row">
+    <div class="col"><div id="field-scatter" class="plot"></div></div>
+    <div class="col"><div id="field-eb" class="plot"></div></div>
+  </div>
+  <div class="row">
+    <div class="col controls-box">
+      <button id="field-u" class="active">component du</button><button id="field-v">component dv</button>
+      &nbsp;&nbsp; show: <button id="field-raw" class="active">residuals</button><button id="field-gp">GP prediction</button><button id="field-res">after correction</button>
+    </div>
+    <div class="col takeaway" id="field-text"></div>
+  </div>
+  <p class="tiny">Astrometric residuals of one visit (one point per star, colour = displacement in mas) and the E/B-mode correlation functions of the field. The stripes are atmospheric turbulence: a pure E-mode (curl-free) field. The goal is to predict this field everywhere from the stars where it is measured.</p>
+</section>
+
+<!-- ================================================================ 3. a field and its 2-pcf -->
+<section data-demo="grf">
+  <h2>2. A Gaussian field is its correlation function <span class="tag toy">toy</span></h2>
+  <div class="row">
+    <div class="col"><div id="grf-field" class="plot"></div></div>
+    <div class="col"><div id="grf-xi" class="plot"></div></div>
+    <div class="col-narrow controls-box">
+      <label>correlation length &ell; = <span class="val" id="grf-ell-v"></span>° <input type="range" id="grf-ell" min="0.05" max="0.5" step="0.01" value="0.2"></label>
+      <label>anisotropy g<sub>1</sub> = <span class="val" id="grf-g1-v"></span> <input type="range" id="grf-g1" min="-0.7" max="0.7" step="0.02" value="0.4"></label>
+      <label>anisotropy g<sub>2</sub> = <span class="val" id="grf-g2-v"></span> <input type="range" id="grf-g2" min="-0.7" max="0.7" step="0.02" value="0.3"></label>
+      <label>noise per star = <span class="val" id="grf-noise-v"></span> mas <input type="range" id="grf-noise" min="0" max="25" step="1" value="0"></label>
+      <button id="grf-new">new realization</button>
+      <label><input type="checkbox" id="grf-measure"> measure from 1500 stars instead (noisy)</label>
+    </div>
+  </div>
+  <div class="takeaway">A stationary Gaussian random field is entirely described by its two-point correlation function
+    \(\xi(\mathbf{X}'-\mathbf{X}) = \mathrm{Cov}[y(\mathbf{X}), y(\mathbf{X}')]\) (Eq. 1): elongated stripes &harr; an elongated correlation map.
+    \(\xi(0)\) is the variance. In the GP vocabulary, \(\xi\) is called the kernel.</div>
+</section>
+
+<!-- ================================================================ 4. GP in 1D -->
+<section data-demo="gp1d">
+  <h2>3. What a Gaussian process does (one dimension) <span class="tag toy">toy</span></h2>
+  <div class="row">
+    <div class="col">
+      <div id="gp1d-main" style="width:100%;height:400px"></div>
+      <div id="gp1d-alpha" style="width:100%;height:140px"></div>
+    </div>
+    <div class="col-narrow">
+      <div class="controls-box">
+        <label>kernel correlation length &ell; = <span class="val" id="gp1d-ell-v"></span>° <input type="range" id="gp1d-ell" min="0.03" max="0.6" step="0.01" value="0.2"></label>
+        <label>measurement noise &sigma; = <span class="val" id="gp1d-sig-v"></span> mas <input type="range" id="gp1d-sig" min="1" max="30" step="1" value="8"></label>
+        <label>number of stars N = <span class="val" id="gp1d-n-v"></span> <input type="range" id="gp1d-n" min="3" max="60" step="1" value="14"></label>
+        <label><input type="checkbox" id="gp1d-bumps" checked> show the N bumps \(\alpha_j\,\xi(x - x_j)\)</label>
+        <button id="gp1d-new">new stars</button> <span class="tiny">click on the plot to add a star</span>
+      </div>
+      <div class="eq" style="font-size:0.7em">\(\mathbf{C}\,\boldsymbol{\alpha} = \mathbf{y},\ \ \mathbf{C} = \mathbf{K} + \mathbf{D}\) &nbsp;(Eq. 3)<br>
+        \(y'(x') = \sum_{j=1}^{N} \alpha_j\, \xi(x' - x_j)\) &nbsp;(Eq. 4)</div>
+      <div class="takeaway" style="font-size:0.58em">Two steps. Eq. 3: solve <em>once</em> for the weights \(\alpha\); \(\mathbf{C}\) accounts for the redundancy between neighbouring stars and for their noise. Eq. 4: the prediction anywhere is a sum of kernel bumps, one per star, scaled by \(\alpha_j\): a <em>convolution</em> of the kernel with the weights placed at the stars.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 5. where does the kernel come from -->
+<section data-demo="kernel">
+  <h2>4. Where does the kernel come from? <span class="tag real">real visit</span></h2>
+  <div class="row">
+    <div class="col"><div id="kernel-meas" class="plot-xs"></div><p class="tiny">measured 2-pcf of the training stars (21&times;21, TreeCorr)</p></div>
+    <div class="col"><div id="kernel-fit" class="plot-xs"></div><p class="tiny">L21: anisotropic von Kármán fitted to it (4 hyperparameters, Eq. 5-7)</p></div>
+    <div class="col"><div id="kernel-resid" class="plot-xs"></div><p class="tiny">measured &minus; fit: what the parametric kernel misses</p></div>
+  </div>
+  <div class="row">
+    <div class="col"><div id="kernel-raw" class="plot-xs"></div><p class="tiny">G25 / TURBO-GP: the same measurement at 20" (108&times;108), raw</p></div>
+    <div class="col"><div id="kernel-clean" class="plot-xs"></div><p class="tiny">... cleaned (next slide): this map <em>is</em> the kernel, nothing to fit</p></div>
+    <div class="col-narrow">
+      <div class="controls-box"><button id="kernel-u" class="active">du</button><button id="kernel-v">dv</button></div>
+      <div class="takeaway" id="kernel-text" style="font-size:0.55em"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 6. cleaning -->
+<section data-demo="clean">
+  <h2>5. Cleaning the measured map <span class="tag real">real visit, live</span></h2>
+  <div class="row">
+    <div class="col"><div id="clean-raw" class="plot-short"></div><p class="tiny">raw map &times; apodization window</p></div>
+    <div class="col"><div id="clean-power" class="plot-short"></div><p class="tiny">its Fourier transform \(\hat P_k\); kept modes outlined</p></div>
+    <div class="col"><div id="clean-out" class="plot-short"></div><p class="tiny">transformed back: the cleaned map (the kernel)</p></div>
+  </div>
+  <div class="row">
+    <div class="col controls-box">
+      <label>window: <button id="clean-hann" class="active">Hann</button><button id="clean-bh">Blackman&ndash;Harris</button> &nbsp; radius = <span class="val" id="clean-rad-v"></span>° <input type="range" id="clean-rad" min="0.08" max="0.32" step="0.01" value="0.278"></label>
+      <label>window anisotropy g<sub>1</sub> = <span class="val" id="clean-g1-v"></span>, g<sub>2</sub> = <span class="val" id="clean-g2-v"></span>
+        <input type="range" id="clean-g1" min="-0.7" max="0.7" step="0.02" value="0"> <input type="range" id="clean-g2" min="-0.7" max="0.7" step="0.02" value="0">
+        <button id="clean-auto">use the anisotropy measured by treegp</button></label>
+      <label>S/N threshold = <span class="val" id="clean-thr-v"></span> &sigma; <input type="range" id="clean-thr" min="0.5" max="8" step="0.25" value="2.5"></label>
+      <button id="clean-u" class="active">du</button><button id="clean-v">dv</button>
+    </div>
+    <div class="col takeaway" id="clean-text"></div>
+  </div>
+  <p class="tiny">Three operations, all on a 108&times;108 image: (i) multiply by a window that goes smoothly to zero at a chosen radius, elliptical and matched to the anisotropy of the map; (ii) Fourier transform and zero every mode below a few times the noise, estimated from the scatter of the modes; (iii) transform back. What survives is a non-negative spectrum made of a few modes: the cleaned map is band-limited and positive semi-definite <em>on its own grid</em>.</p>
+</section>
+
+<!-- ================================================================ 7. why it breaks (toy) + real -->
+<section>
+<section data-demo="psd">
+  <h2>6. Why a tabulated kernel is not (yet) a valid kernel <span class="tag toy">toy</span></h2>
+  <div class="row">
+    <div class="col"><div id="psd-kernel" class="plot-short"></div><div id="psd-spectrum" class="plot-short"></div></div>
+    <div class="col"><div id="psd-eig" class="plot"></div></div>
+    <div class="col-narrow">
+      <div class="controls-box">
+        <label>truncation radius R = <span class="val" id="psd-R-v"></span>° <input type="range" id="psd-R" min="0.1" max="1.0" step="0.02" value="0.24"></label>
+        <label><input type="checkbox" id="psd-taper"> taper smoothly (Hann) instead of cutting</label>
+        <label>noise per star &sigma; = <span class="val" id="psd-sig-v"></span> mas <input type="range" id="psd-sig" min="0" max="15" step="0.5" value="2"></label>
+      </div>
+      <div class="takeaway">Bochner: \(\mathbf{K}\) is positive semi-definite for <em>any</em> set of positions iff the Fourier transform of \(\xi\) is non-negative everywhere. Setting the kernel to zero beyond the measured square is a truncation: it convolves the spectrum with a sinc and creates negative lobes. The matrix \(\mathbf{K}\) between the stars then has negative eigenvalues, and Cholesky fails as soon as some stars have small errors. G25 repair \(\mathbf{K}\) with an O(N³) SVD, per visit.</div>
+      <p class="hint-down">&darr; the same thing on the real visit</p>
+    </div>
+  </div>
+</section>
+<section data-demo="psdreal">
+  <h2>6b. ... and on the real visit <span class="tag real">real visit</span></h2>
+  <div class="row">
+    <div class="col"><div id="psdr-cut" class="plot"></div><p class="tiny"><span class="tag real">real visit</span> the cleaned du map (zero beyond &plusmn;0.3°) placed on the solver grid: its spectrum along \(k_v = 0\), zoomed on the lobes. The peak at \(k = 0\) is far off scale.</p></div>
+    <div class="col"><div id="psdr-eig" class="plot"></div><p class="tiny"><span class="tag real">real visit</span> the 40 lowest eigenvalues of the covariance between the <span id="psdr-n"></span> training stars nearest the field centre (the real star density), three ways.</p></div>
+    <div class="col-narrow">
+      <div class="controls-box"><button id="psdr-u" class="active">du</button><button id="psdr-v">dv</button></div>
+      <div class="takeaway" id="psdr-text" style="font-size:0.58em"></div>
+    </div>
+  </div>
+</section>
+</section>
+
+<!-- ================================================================ 8. grid (toy) + real patch -->
+<section>
+<section data-demo="grid">
+  <h2>7. The TURBO-GP idea: put the stars on a fine grid <span class="tag toy">toy</span></h2>
+  <div class="row">
+    <div class="col"><div id="grid-one" class="plot"></div><p class="tiny">click or drag anywhere to move the star; the four bilinear weights sum to one</p></div>
+    <div class="col"><div id="grid-many" class="plot"></div><p class="tiny">\(\mathbf{W}^T\mathbf{v}\): the values of 40 stars deposited on their nodes, zero elsewhere</p></div>
+    <div class="col-narrow">
+      <div class="controls-box" id="grid-weights"></div>
+      <div class="eq">$$\mathbf{K} = \mathbf{W}\,\mathbf{G}\,\mathbf{W}^T \tag{10}$$</div>
+      <div class="takeaway">Grid spacing \(h\) = half the pixel of the correlation map (10"). Each star is represented by the four nodes around it with bilinear weights: a sparse \(N \times N_g\) matrix \(\mathbf{W}\). Why is this exact here? The cleaned map is a finite sum of Fourier modes, so its values anywhere follow from its values on a grid; the only approximation is the bilinear smoothing at the scale \(h\).</div>
+      <p class="hint-down">&darr; the real grid of the visit</p>
+    </div>
+  </div>
+</section>
+<section data-demo="gridreal">
+  <h2>7b. The real grid of the whole visit <span class="tag real">real visit</span></h2>
+  <div class="row">
+    <div class="col"><div id="gridr-full" class="plot"></div><p class="tiny"><span class="tag real">real visit</span> \(\mathbf{W}^T\mathbf{y}\) (mas) on the whole solver grid (h = 10"): the centred residual of each training star (dots) deposited on its four nodes; shown summed over 8&times;8 nodes. <b>Drag a box to zoom</b> (the right panel follows), double-click to reset.</p></div>
+    <div class="col"><div id="gridr-zoom" class="plot"></div><p class="tiny"><span class="tag real">real visit</span> the zoomed region: every node that received a share of a star is a marker (size = weight &times; |value|, colour = value in mas), stars are black; below 48&times;48 nodes the empty nodes are drawn in grey too; large regions are block-summed</p></div>
+    <div class="col-narrow">
+      <div class="controls-box"><button id="gridr-u" class="active">du</button><button id="gridr-v">dv</button></div>
+      <div class="takeaway" id="gridr-text" style="font-size:0.58em"></div>
+    </div>
+  </div>
+</section>
+</section>
+
+<!-- ================================================================ 9. convolution (toy) + real -->
+<section>
+<section data-demo="conv">
+  <h2>8. On the grid, the covariance is a convolution, done with the FFT <span class="tag toy">toy</span></h2>
+  <div class="row">
+    <div class="col"><div id="conv-in" class="plot-short"></div><p class="tiny">input image \(\mathbf{f} = \mathbf{W}^T\mathbf{v}\) (stars with v = 1)</p></div>
+    <div class="col"><div id="conv-kernel" class="plot-short"></div><p class="tiny">kernel image \(\kappa\) (zero beyond its support)</p></div>
+    <div class="col"><div id="conv-out" class="plot-short"></div><p class="tiny">\(\mathbf{G}\mathbf{f} = \kappa * \mathbf{f}\): the field the weights would create at every node</p></div>
+  </div>
+  <div class="row">
+    <div class="col controls-box">
+      <label><input type="checkbox" id="conv-pad" checked> zero-pad the FFT grid to field + kernel support (the periodic wrap then never connects two stars)</label>
+      <label>kernel correlation length &ell; = <span class="val" id="conv-ell-v"></span>° <input type="range" id="conv-ell" min="0.1" max="0.5" step="0.02" value="0.25"></label>
+      <button id="conv-new">new stars</button>
+      <p class="hint-down">&darr; the real kernel image and the real weights</p>
+    </div>
+    <div class="col takeaway" id="conv-text">
+      $$(\mathbf{G}\mathbf{f})_m = \sum_n \xi(\mathbf{g}_m - \mathbf{g}_n)\, f_n = (\kappa * \mathbf{f})_m,\qquad \mathbf{G} = \tfrac{1}{N_g}\,\mathbf{F}^\dagger\,\mathrm{diag}(\hat P_k)\,\mathbf{F} \tag{9}$$
+      The covariance between two nodes depends only on their separation, so the whole \(N_g \times N_g\) covariance of the nodes is a convolution: FFT, multiply by the spectrum of the kernel image, inverse FFT. Cost \(O(N_g \log N_g)\), memory \(O(N_g)\). Untick the padding to see what the periodic wrap of the FFT does.
+    </div>
+  </div>
+</section>
+<section data-demo="convreal">
+  <h2>8b. The same convolution with the real kernel, on the 0.5° patch <span class="tag real">real visit, live</span></h2>
+  <div class="row">
+    <div class="col"><div id="convr-in" class="plot-row4"></div><p class="tiny"><span class="tag real">real visit</span> \(\mathbf{W}^T\alpha\): the solved weights of the <span id="convr-n"></span> stars of the 396&times;396 box, 180&times;180 window shown</p></div>
+    <div class="col"><div id="convr-kernel" class="plot-row4"></div><p class="tiny"><span class="tag real">real visit</span> kernel image \(\kappa\): the cleaned map resampled at h = 10" (217&times;217)</p></div>
+    <div class="col"><div id="convr-out" class="plot-row4"></div><p class="tiny"><span class="tag real">real visit</span> \(\kappa * \mathbf{W}^T\alpha\), computed now in your browser (1024&times;1024 padded FFT)</p></div>
+    <div class="col"><div id="convr-ref" class="plot-row4"></div><p class="tiny"><span class="tag real">real visit</span> treegp's mean field on the same patch (Eq. 13), computed from all 10&thinsp;000 stars</p></div>
+  </div>
+  <div class="row">
+    <div class="col-narrow controls-box"><button id="convr-u" class="active">du</button><button id="convr-v">dv</button></div>
+    <div class="col takeaway" id="convr-text" style="font-size:0.58em"></div>
+  </div>
+</section>
+</section>
+
+<!-- ================================================================ 10. PSD by construction -->
+<section data-demo="bochner">
+  <h2>9. Positive semi-definite by construction <span class="tag real">real visit</span> <span class="tag toy">toy</span></h2>
+  <div class="row">
+    <div class="col"><div id="boch-spec" class="plot"></div><p class="tiny"><span class="tag real">real visit</span> low-frequency corner of the spectrum of the padded kernel image on the solver grid (signed log scale); negative pixels in blue</p></div>
+    <div class="col"><div id="boch-hist" class="plot"></div><p class="tiny"><span class="tag toy">toy</span> a cut through the spectrum of a sharply truncated kernel image, before and after the one-time clip (the real lobes, slide 6b, are too shallow to see on a linear cut)</p></div>
+    <div class="col-narrow">
+      <div class="eq" style="font-size:0.72em">\(\mathbf{v}^T\mathbf{K}\mathbf{v} = \frac{1}{N_g}\sum_k \hat P_k\,\big|(\mathbf{F}\,\mathbf{W}^T\mathbf{v})_k\big|^2 \ge 0\) &nbsp;(Eq. 11)</div>
+      <div class="takeaway" id="boch-text" style="font-size:0.52em"></div>
+      <div class="controls-box"><button id="boch-u" class="active">du</button><button id="boch-v">dv</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 11. matvec -->
+<section data-demo="matvec">
+  <h2>10. Applying \(\mathbf{C}\) to a vector: four steps, never a matrix <span id="mv-tag" class="tag toy">toy</span></h2>
+  <div class="eq">$$\mathbf{C}\,\mathbf{v} = \mathbf{W}\Big[\mathbf{F}^{-1}\big(\hat P_k \odot \mathbf{F}\,(\mathbf{W}^T\mathbf{v})\big)\Big] + \mathbf{D}\,\mathbf{v} \tag{12}$$</div>
+  <div class="row">
+    <div class="col"><div id="mv-plot" class="plot"></div>
+      <div class="takeaway" style="font-size:0.55em" id="mv-text">Cost per application: \(O(N + N_g \log N_g)\) time and \(O(N + N_g)\) memory, instead of \(O(N^3)\) and \(O(N^2)\). This is the only operation the solver needs.</div>
+    </div>
+    <div class="col-narrow">
+      <div class="controls-box" style="font-size:0.55em">
+        <button id="mv-toy" class="active">toy</button><button id="mv-real">real visit (all 10&thinsp;000 stars, v = y)</button> <button id="mv-play">play</button> <button id="mv-new">new v</button><br>
+        <button id="mv-0" class="active">input v</button><button id="mv-1">1. fill the grid</button><button id="mv-2">2. convolve</button><button id="mv-3">3. read back</button><button id="mv-4">4. add noise</button>
+      </div>
+      <ol class="steps" id="mv-steps" style="font-size:0.52em">
+        <li>Deposit \(v_i\) on the four nodes around star i, with its bilinear weights: the image \(\mathbf{W}^T\mathbf{v}\) (real visit: the full 1439&times;1454 grid, displayed on 8&times;8 blocks).</li>
+        <li>Convolve the image by the kernel image through the padded FFT grid: the field the weights would produce at every node.</li>
+        <li>Read the field back at each star by bilinear interpolation (multiply by \(\mathbf{W}\)): this is \(\mathbf{K}\mathbf{v}\).</li>
+        <li>Add \(\sigma_i^2 v_i\): the result is \(\mathbf{C}\mathbf{v}\).</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 12. CG -->
+<section data-demo="cg">
+  <h2>11. Solving \(\mathbf{C}\alpha = \mathbf{y}\) by conjugate gradient</h2>
+  <div class="row">
+    <div class="col"><div id="cg-bowl" class="plot"></div><p class="tiny"><span class="tag toy">toy</span> 2 unknowns: minimizing \(\tfrac12 \alpha^T\mathbf{C}\alpha - \mathbf{y}^T\alpha\). Steepest descent zigzags; conjugate directions finish in 2 steps.</p></div>
+    <div class="col"><div id="cg-field" class="plot-short"></div><div id="cg-resid" style="width:100%;height:170px"></div></div>
+    <div class="col-narrow">
+      <div class="controls-box">
+        <button id="cg-toy" class="active">toy (300 stars)</button><button id="cg-real">real visit (10&thinsp;000 stars)</button>
+        <label>iteration k = <span class="val" id="cg-k-v"></span> <input type="range" id="cg-k" min="0" max="60" step="1" value="3"></label>
+        <label><input type="checkbox" id="cg-precond" checked> Jacobi preconditioner \(\mathbf{M} = \mathrm{diag}(\xi(0) + \sigma_i^2)\)</label>
+        <button id="cg-play">play</button> <button id="cg-new">new toy visit</button>
+      </div>
+      <div class="takeaway" id="cg-text" style="font-size:0.58em">
+        Start from \(\alpha_0 = 0\): the residual is the data itself, \(\mathbf{r}_0 = \mathbf{y}\), and the first direction is \(\mathbf{M}^{-1}\mathbf{r}_0\) (each star divided by its total variance). Each iteration applies \(\mathbf{C}\) once (Eq. 12), steps along the direction by the amount that minimizes the error, and builds the next direction conjugate to the previous one. Stop when \(\|\mathbf{r}\| < 10^{-7}\|\mathbf{y}\|\).
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 13. prediction as a field -->
+<section data-demo="field2">
+  <h2>12. The prediction is a field, computed once <span class="tag real">real visit</span></h2>
+  <div class="row">
+    <div class="col"><div id="f2-mean" style="width:100%;height:430px"></div></div>
+    <div class="col"><div id="f2-eb" class="plot-short"></div>
+      <div class="controls-box"><button id="f2-u" class="active">du</button><button id="f2-v">dv</button> &nbsp; <span class="tiny">hover the map to read the correction at any position</span></div>
+    </div>
+  </div>
+  <div class="takeaway" id="f2-text" style="font-size:0.56em"></div>
+</section>
+
+<!-- ================================================================ 14. cost -->
+<section data-demo="cost">
+  <h2>13. What it buys <span class="tag real">measured</span></h2>
+  <div class="row">
+    <div class="col"><div id="cost-time" class="plot"></div></div>
+    <div class="col"><div id="cost-mem" class="plot"></div></div>
+    <div class="col-narrow">
+      <div class="controls-box"><label>training stars N = <span class="val" id="cost-n-v"></span> <input type="range" id="cost-n" min="2000" max="60000" step="1000" value="10000"></label>
+        <div id="cost-read" class="small"></div></div>
+      <div class="takeaway">Per component, one core, measured on this visit (markers) and extrapolated with the known scalings (N³, N² for the dense path; essentially linear for the grid). The DRP budget is 4 GB per core. On DP2: error rate 5% &rarr; 1%, total wall time 979 days &rarr; 15 days, typical memory 7 GB &rarr; 1&ndash;2 GB, and a residual E-mode 30% lower.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ 15. summary -->
+<section data-demo="none">
+  <h2>Summary: the pipeline in one table</h2>
+  <table>
+    <thead><tr><th>Step</th><th>What</th><th>RTN-129</th><th>treegp</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Measure the 2D 2-pcf of the training stars (20" pixels, ±0.3°), rebin 2×2</td><td>Sect. 3.3</td><td><code>empirical_2pcf.comp_2pcf</code></td></tr>
+      <tr><td>2</td><td>Clean: elliptical window matched to the anisotropy, FFT, S/N threshold, back</td><td>Sect. 3.3</td><td><code>empirical_2pcf.clean</code></td></tr>
+      <tr><td>3</td><td>Resample the map on the fine grid (exact), spread the stars with bilinear weights \(\mathbf{W}\)</td><td>Eq. 9-10</td><td><code>GridConvolutionGP._spread_matrix</code></td></tr>
+      <tr><td>4</td><td>Padded FFT spectrum of the kernel image, clip the negative modes once: PSD by construction</td><td>Eq. 11</td><td><code>_setup_geometry</code></td></tr>
+      <tr><td>5</td><td>Solve \(\mathbf{C}\alpha = \mathbf{y}\) by Jacobi-preconditioned conjugate gradient, matvec = spread, FFT, read back, noise</td><td>Eq. 3, 12</td><td><code>solve</code></td></tr>
+      <tr><td>6</td><td>One convolution of \(\mathbf{W}^T\alpha\): the mean field; each CCD reads it bilinearly</td><td>Eq. 4, 13</td><td><code>predict</code></td></tr>
+    </tbody>
+  </table>
+  <div class="takeaway">Nothing to fit, no patches, no O(N³) decomposition, no matrix ever stored. The kernel comes from the data, the linear algebra from the FFT.</div>
+  <p class="small" style="margin-top:14px">Read more: <a href="https://rtn-129.lsst.io">RTN-129, the technote</a> &middot; <a href="https://github.com/PFLeget/treegp">treegp on GitHub</a> (<code>optimizer="empirical-2pcf"</code>, <code>solve_method="spectral"</code>) &middot; <a href="https://treegp.readthedocs.io">treegp documentation</a>, with a <a href="https://treegp.readthedocs.io/en/latest/treegp_gp_interp.html#worked-example-l21-and-turbo-gp-on-a-simulated-rubin-visit">worked example</a> running L21 and TURBO-GP on this very visit (data: <a href="data/rubin_visit_2025052000348.npz">rubin_visit_2025052000348.npz</a>, 3.4 MB)</p>
+  <p class="tiny">References: <a href="https://arxiv.org/abs/2103.09881">Léget et al. 2021</a> (L21), <a href="https://doi.org/10.3847/1538-3881/ae1a7b">Gomes et al. 2025</a> (G25), Wilson &amp; Nickisch 2015 (KISS-GP), Hestenes &amp; Stiefel 1952, Shewchuk 1994 (CG without the agonizing pain). Deck built with reveal.js, Plotly and KaTeX; numerics in <code>js/num.js</code>, real-data export in <code>make_data.py</code>.</p>
+</section>
+
+</div>
+</div>
+
+<script src="js/lib/reveal.min.js"></script>
+<script src="js/lib/plotly.min.js"></script>
+<script src="js/lib/katex/katex.min.js"></script>
+<script src="js/lib/katex/auto-render.min.js"></script>
+<script src="data/visit.js"></script>
+<script src="js/num.js?v=5"></script>
+<script src="js/demos.js?v=5"></script>
+<script>
+  // CDN fallbacks if a vendored library is missing (e.g. a partial checkout)
+  if (typeof Reveal === "undefined") document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.1.0/reveal.min.js"><\/script>');
+  if (typeof Plotly === "undefined") document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.3/plotly.min.js"><\/script>');
+</script>
+<script>
+  Reveal.initialize({ hash: true, width: 1280, height: 760, margin: 0.03, center: false, transition: "fade", slideNumber: "c/t" });
+  renderMathInElement(document.body, { delimiters: [{ left: "$$", right: "$$", display: true }, { left: "\\(", right: "\\)", display: false }] });
+  DEMOS.start();
+</script>
+</body>
+</html>

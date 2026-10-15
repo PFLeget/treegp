@@ -1,0 +1,64 @@
+/* TURBO-GP slides: light theme tweaks on top of reveal.js "white". */
+:root {
+  --accent: #1f5fbf;
+  --accent2: #c0392b;
+  --muted: #666;
+}
+.reveal {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 30px;
+}
+.reveal h1 { font-size: 1.9em; text-transform: none; letter-spacing: 0; }
+.reveal h2 { font-size: 1.25em; text-transform: none; letter-spacing: 0; color: var(--accent); margin-bottom: 0.3em; }
+.reveal h3 { font-size: 0.95em; text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: normal; }
+.reveal p, .reveal li { line-height: 1.35; }
+.reveal .small { font-size: 0.72em; color: var(--muted); }
+.reveal .tiny { font-size: 0.58em; color: var(--muted); }
+.reveal .eq { font-size: 0.85em; margin: 0.2em 0 0.4em 0; }
+.reveal .eqno { float: right; color: var(--muted); font-size: 0.7em; }
+.reveal .row { display: flex; gap: 18px; align-items: flex-start; justify-content: center; }
+.reveal .col { flex: 1 1 0; min-width: 0; }
+.reveal .col-narrow { flex: 0 0 300px; }
+.reveal .plot { width: 100%; height: 440px; }
+.reveal .plot-tall { width: 100%; height: 520px; }
+.reveal .plot-short { width: 100%; height: 330px; }
+.reveal .plot-xs { width: 100%; height: 240px; }
+.reveal .controls-box {
+  font-size: 0.62em; text-align: left; background: #f4f6fa; border-radius: 8px;
+  padding: 10px 14px; margin-top: 6px;
+}
+.reveal .controls-box label { display: block; margin: 4px 0; }
+.reveal .controls-box input[type=range] { width: 100%; }
+.reveal .controls-box .val { color: var(--accent); font-weight: bold; }
+.reveal .controls-box button {
+  font-size: 1em; padding: 4px 10px; margin: 3px 4px 3px 0; border-radius: 6px;
+  border: 1px solid #aab; background: #fff; cursor: pointer;
+}
+.reveal .controls-box button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.reveal .note {
+  font-size: 0.62em; color: #333; background: #fff8e1; border-left: 4px solid #f1c40f;
+  padding: 6px 10px; text-align: left; margin-top: 8px;
+}
+.reveal .takeaway {
+  font-size: 0.7em; color: #0b3d0b; background: #eaf7ea; border-left: 4px solid #27ae60;
+  padding: 6px 10px; text-align: left; margin-top: 8px;
+}
+.reveal .steps { text-align: left; font-size: 0.75em; }
+.reveal .steps li { margin: 0.25em 0; }
+.reveal .steps li.active { color: var(--accent); font-weight: bold; }
+.reveal table { font-size: 0.65em; }
+.reveal .ref { color: var(--muted); font-size: 0.55em; }
+.reveal code { color: var(--accent2); font-size: 0.9em; }
+.reveal .katex { font-size: 1.0em; }
+.reveal .stat { font-size: 1.6em; color: var(--accent); font-weight: bold; }
+.reveal .legend-inline span { display: inline-block; margin: 0 8px; font-size: 0.65em; }
+.reveal .tag {
+  display: inline-block; font-size: 0.85em; font-weight: bold; letter-spacing: 0.02em; padding: 1px 7px;
+  border-radius: 10px; margin-right: 5px; vertical-align: middle; color: #fff;
+}
+.reveal .tag.real { background: #1b7f3b; }
+.reveal .tag.toy { background: #d97a00; }
+.reveal h2 .tag { font-size: 0.45em; vertical-align: middle; margin-left: 10px; }
+.reveal .plot-row4 { width: 100%; height: 300px; }
+.reveal a { color: var(--accent); text-decoration: underline; }
+.reveal .hint-down { font-size: 0.55em; color: var(--muted); text-align: right; margin: 2px 0 0 0; }
