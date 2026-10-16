@@ -162,11 +162,12 @@ the path taken when ``return_cov=True``:
     xi, xi_clean, distance, pixel_size = gp.return_empirical_2pcf()
 
 
-Worked example: L21 and TURBO-GP on a simulated Rubin visit
-===========================================================
+Worked example: L21 and TURBO-GP on a real LSSTCam visit
+========================================================
 
 The interactive slides at https://pfleget.github.io/treegp/ are built from one
-simulated Rubin Observatory visit (visit 2025052000348, 163 661 stars): the
+real LSSTCam visit (visit 2025052000348, z band, 163 661 stars; the example
+data distributed by Gomes et al. 2025 with their code): the
 astrometric residuals ``du``, ``dv`` of each star (in mas, with their
 measurement errors) at the tangent-plane positions ``u``, ``v`` (in degrees).
 The residuals are dominated by atmospheric turbulence, a smooth, anisotropic
@@ -281,8 +282,8 @@ On this visit the E-mode variance at the smallest separations goes from
 about 330 mas\ :sup:`2` before correction to about 30 mas\ :sup:`2` after
 either Gaussian process (the two kernels give the same quality here; the
 difference is the cost, and the fact that TURBO-GP has no parametric shape
-to fit). The remaining scatter per star is the ~13 mas photon noise of the
-simulation, which is uncorrelated between stars and therefore absent from
+to fit). The remaining scatter per star is the ~13 mas measurement noise of the
+sources, which is uncorrelated between stars and therefore absent from
 the correlation function.
 
 .. image:: rubin_visit_l21_turbogp.png

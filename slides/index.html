@@ -20,7 +20,7 @@
   <p class="small">TUrbulence Removal By fourier-Optimized Gaussian Process &mdash; companion to <a href="https://rtn-129.lsst.io">RTN-129</a> (Léget et al.), implemented in <a href="https://github.com/PFLeget/treegp">treegp</a>.</p>
   <p class="small">The method: the empirical kernel of Gomes et al. 2025, inside treegp, solved on a grid with the FFT and conjugate gradient.</p>
   <p class="tiny">Arrow keys to navigate (&darr; opens the real-data companion of a slide), <code>Esc</code> for the overview. Every slide has a live plot: move the sliders, click, drag.</p>
-  <p class="tiny"><span class="tag real">real visit</span> pieces come from a simulated Rubin visit (<span id="title-visit"></span>) processed by treegp; <span class="tag toy">toy</span> pieces are small synthetic examples computed live in your browser.</p>
+  <p class="tiny"><span class="tag real">real visit</span> pieces come from a real LSSTCam visit (<span id="title-visit"></span>) processed by treegp; <span class="tag toy">toy</span> pieces are small synthetic examples computed live in your browser.</p>
 </section>
 
 <!-- ================================================================ 2. the field -->
@@ -226,7 +226,7 @@
     <div class="col"><div id="boch-spec" class="plot"></div><p class="tiny"><span class="tag real">real visit</span> low-frequency corner of the spectrum of the padded kernel image on the solver grid (signed log scale); negative pixels in blue</p></div>
     <div class="col"><div id="boch-hist" class="plot"></div><p class="tiny"><span class="tag toy">toy</span> a cut through the spectrum of a sharply truncated kernel image, before and after the one-time clip (the real lobes, slide 6b, are too shallow to see on a linear cut)</p></div>
     <div class="col-narrow">
-      <div class="eq" style="font-size:0.72em">\(\mathbf{v}^T\mathbf{K}\mathbf{v} = \frac{1}{N_g}\sum_k \hat P_k\,\big|(\mathbf{F}\,\mathbf{W}^T\mathbf{v})_k\big|^2 \ge 0\) &nbsp;(Eq. 11)</div>
+      <div class="eq" style="font-size:0.72em">\(\mathbf{v}^T\mathbf{K}\mathbf{v} = \frac{1}{N_g}\sum_k \hat P_k\,\big|(\mathbf{F}\,\mathbf{W}^T\mathbf{v})_k\big|^2 \ge 0\) &nbsp;(Eq. 11)<br><span class="tiny">\(\mathbf{v}^T\mathbf{K}\mathbf{v}\) is the variance of the weighted sum \(\sum_i v_i\, y(\mathbf{X}_i)\) of the field at the stars, for any weights \(v_i\): a valid covariance never makes it negative.</span></div>
       <div class="takeaway" id="boch-text" style="font-size:0.52em"></div>
       <div class="controls-box"><button id="boch-u" class="active">du</button><button id="boch-v">dv</button></div>
     </div>
@@ -236,21 +236,21 @@
 <!-- ================================================================ 11. matvec -->
 <section data-demo="matvec">
   <h2>10. Applying \(\mathbf{C}\) to a vector: four steps, never a matrix <span id="mv-tag" class="tag toy">toy</span></h2>
-  <div class="eq">$$\mathbf{C}\,\mathbf{v} = \mathbf{W}\Big[\mathbf{F}^{-1}\big(\hat P_k \odot \mathbf{F}\,(\mathbf{W}^T\mathbf{v})\big)\Big] + \mathbf{D}\,\mathbf{v} \tag{12}$$</div>
+  <div class="eq">$$\mathbf{C}\,\mathbf{v} = \mathbf{W}\,\mathbf{F}^{-1}\,\mathrm{diag}(\hat P_k)\,\mathbf{F}\,\mathbf{W}^T\mathbf{v} + \mathbf{D}\,\mathbf{v} \tag{12}$$</div>
   <div class="row">
     <div class="col"><div id="mv-plot" class="plot"></div>
-      <div class="takeaway" style="font-size:0.55em" id="mv-text">Cost per application: \(O(N + N_g \log N_g)\) time and \(O(N + N_g)\) memory, instead of \(O(N^3)\) and \(O(N^2)\). This is the only operation the solver needs.</div>
+      <div class="takeaway" style="font-size:0.55em" id="mv-text">Cost per application: \(O(N + N_g \log N_g)\) time and \(O(N + N_g)\) memory, instead of \(O(N^3)\) and \(O(N^2)\). This is the only operation the solver needs. Read it from right to left; \(\mathrm{diag}(\hat P_k)\) multiplies each Fourier mode of the image by \(\hat P_k\). The vector \(\mathbf{v}\) is the data \(\mathbf{y}\) for the first product (the solver starts from \(\alpha = 0\)), then the successive search directions of the conjugate gradient.</div>
     </div>
     <div class="col-narrow">
       <div class="controls-box" style="font-size:0.55em">
-        <button id="mv-toy" class="active">toy</button><button id="mv-real">real visit (all 10&thinsp;000 stars, v = y)</button> <button id="mv-play">play</button> <button id="mv-new">new v</button><br>
+        <button id="mv-toy" class="active">toy</button><button id="mv-real">real visit, v = y</button><button id="mv-alpha">real visit, v = &alpha; (gives y back)</button> <button id="mv-play">play</button> <button id="mv-new">new v</button><br>
         <button id="mv-0" class="active">input v</button><button id="mv-1">1. fill the grid</button><button id="mv-2">2. convolve</button><button id="mv-3">3. read back</button><button id="mv-4">4. add noise</button>
       </div>
       <ol class="steps" id="mv-steps" style="font-size:0.52em">
         <li>Deposit \(v_i\) on the four nodes around star i, with its bilinear weights: the image \(\mathbf{W}^T\mathbf{v}\) (real visit: the full 1439&times;1454 grid, displayed on 8&times;8 blocks).</li>
-        <li>Convolve the image by the kernel image through the padded FFT grid: the field the weights would produce at every node.</li>
+        <li>Convolve the image by the kernel image through the padded FFT grid (FFT, multiply mode by mode by \(\hat P_k\), inverse FFT): the field the weights would produce at every node.</li>
         <li>Read the field back at each star by bilinear interpolation (multiply by \(\mathbf{W}\)): this is \(\mathbf{K}\mathbf{v}\).</li>
-        <li>Add \(\sigma_i^2 v_i\): the result is \(\mathbf{C}\mathbf{v}\).</li>
+        <li>Add \(\sigma_i^2 v_i\): the result is \(\mathbf{C}\mathbf{v}\). With v = &alpha;, the final weights of the solve, the result is the data y: that is what solving Eq. 3 means.</li>
       </ol>
     </div>
   </div>
@@ -270,7 +270,7 @@
         <button id="cg-play">play</button> <button id="cg-new">new toy visit</button>
       </div>
       <div class="takeaway" id="cg-text" style="font-size:0.58em">
-        Start from \(\alpha_0 = 0\): the residual is the data itself, \(\mathbf{r}_0 = \mathbf{y}\), and the first direction is \(\mathbf{M}^{-1}\mathbf{r}_0\) (each star divided by its total variance). Each iteration applies \(\mathbf{C}\) once (Eq. 12), steps along the direction by the amount that minimizes the error, and builds the next direction conjugate to the previous one. Stop when \(\|\mathbf{r}\| < 10^{-7}\|\mathbf{y}\|\).
+        Eq. 3 is the question (find \(\alpha\) with \(\mathbf{C}\alpha = \mathbf{y}\)); Eq. 12 is the only tool. A guess-and-correct loop: start from the guess \(\alpha_0 = 0\), whose mismatch is \(\mathbf{r}_0 = \mathbf{y} - \mathbf{C}\alpha_0 = \mathbf{y}\). Pick a direction \(\mathbf{p}\) (first: y divided star by star by its total variance, \(\mathbf{M}^{-1}\mathbf{y}\)). Ask Eq. 12 for \(\mathbf{C}\mathbf{p}\), which says how far to move: \(\alpha \leftarrow \alpha + a\,\mathbf{p}\), \(\mathbf{r} \leftarrow \mathbf{r} - a\,\mathbf{C}\mathbf{p}\). While \(\|\mathbf{r}\| > 10^{-7}\|\mathbf{y}\|\), build the next direction from the new r, conjugate to the previous one, and repeat. Each point of the residual curve is one call to Eq. 12; at the end \(\mathbf{C}\alpha = \mathbf{y}\) (slide 10, v = &alpha;).
       </div>
     </div>
   </div>
@@ -317,7 +317,7 @@
     </tbody>
   </table>
   <div class="takeaway">Nothing to fit, no patches, no O(N³) decomposition, no matrix ever stored. The kernel comes from the data, the linear algebra from the FFT.</div>
-  <p class="small" style="margin-top:14px">Read more: <a href="https://rtn-129.lsst.io">RTN-129, the technote</a> &middot; <a href="https://github.com/PFLeget/treegp">treegp on GitHub</a> (<code>optimizer="empirical-2pcf"</code>, <code>solve_method="spectral"</code>) &middot; <a href="https://treegp.readthedocs.io">treegp documentation</a>, with a <a href="https://treegp.readthedocs.io/en/latest/treegp_gp_interp.html#worked-example-l21-and-turbo-gp-on-a-simulated-rubin-visit">worked example</a> running L21 and TURBO-GP on this very visit (data: <a href="data/rubin_visit_2025052000348.npz">rubin_visit_2025052000348.npz</a>, 3.4 MB)</p>
+  <p class="small" style="margin-top:14px">Read more: <a href="https://rtn-129.lsst.io">RTN-129, the technote</a> &middot; <a href="https://github.com/PFLeget/treegp">treegp on GitHub</a> (<code>optimizer="empirical-2pcf"</code>, <code>solve_method="spectral"</code>) &middot; <a href="https://treegp.readthedocs.io">treegp documentation</a>, with a <a href="https://treegp.readthedocs.io/en/latest/treegp_gp_interp.html#worked-example-l21-and-turbo-gp-on-a-real-lsstcam-visit">worked example</a> running L21 and TURBO-GP on this very visit (data: <a href="data/rubin_visit_2025052000348.npz">rubin_visit_2025052000348.npz</a>, 3.4 MB)</p>
   <p class="tiny">References: <a href="https://arxiv.org/abs/2103.09881">Léget et al. 2021</a> (L21), <a href="https://doi.org/10.3847/1538-3881/ae1a7b">Gomes et al. 2025</a> (G25), Wilson &amp; Nickisch 2015 (KISS-GP), Hestenes &amp; Stiefel 1952, Shewchuk 1994 (CG without the agonizing pain). Deck built with reveal.js, Plotly and KaTeX; numerics in <code>js/num.js</code>, real-data export in <code>make_data.py</code>.</p>
 </section>
 

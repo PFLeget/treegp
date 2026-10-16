@@ -430,7 +430,7 @@ const DEMOS = (() => {
       const c = V.comp[comp], sc = c.spec_crop;
       const ky = NUM.linspace(-sc.rows / 2, sc.rows / 2 - 1, sc.rows).map((v) => v / (c.grid.ly * c.grid.h)), kx = NUM.linspace(0, sc.cols - 1, sc.cols).map((v) => v / (c.grid.lx * c.grid.h));
       heat("boch-spec", sc.vals, kx, ky, { title: `REAL: padded spectrum P̂_k, ${c.grid.lx}² grid, sign·log10(1+|P̂_k|)`, xt: "k_u (1/deg)", yt: "k_v (1/deg)", zmax: Math.max(...sc.vals.flat()), square: false, ctitle: "sign·log10(1+|P̂_k|)" });
-      $("boch-text").innerHTML = `Zero-padding the kernel image on the ${c.grid.lx}×${c.grid.ly} FFT grid is a truncation again: the negative modes carry ${fmt(100 * c.neg_power, 1)}% of the positive power (deepest mode ${fmt(c.spectrum_min, 0)} against a peak set by ξ(0) times the kernel support; about half of all modes are tiny negative numbers at frequencies where the band-limited kernel has no power at all). They are clipped to zero <em>once</em>, at the cost of one FFT. Then Eq. 11 holds for any vector: the quadratic form is a sum of non-negative terms, \\(\\mathbf{K}\\) is positive semi-definite for every configuration of stars, \\(\\mathbf{C} = \\mathbf{K} + \\mathbf{D}\\) is positive definite, and a failure of the linear algebra is impossible rather than repaired. Effective ξ(0) after the clip: ${fmt(c.xi0_eff, 0)} mas² (cleaned map: ${fmt(c.xi0_clean, 0)}).`;
+      $("boch-text").innerHTML = `Zero-padding the kernel image on the ${c.grid.lx}×${c.grid.ly} FFT grid is a truncation again: the negative modes carry ${fmt(100 * c.neg_power, 1)}% of the positive power (deepest mode ${fmt(c.spectrum_min, 0)} against a peak set by ξ(0) times the kernel support; about half of all modes are tiny negative numbers at frequencies where the band-limited kernel has no power at all). They are clipped to zero <em>once</em>, at the cost of one FFT. Then Eq. 11 holds for any weights v on the stars (the variance of Σ vᵢ yᵢ is a sum of non-negative terms), \\(\\mathbf{K}\\) is positive semi-definite for every configuration of stars, \\(\\mathbf{C} = \\mathbf{K} + \\mathbf{D}\\) is positive definite, and a failure of the linear algebra is impossible rather than repaired. Effective ξ(0) after the clip: ${fmt(c.xi0_eff, 0)} mas² (cleaned map: ${fmt(c.xi0_clean, 0)}).`;
       renderMathInElement($("boch-text"), { delimiters: [{ left: "\\(", right: "\\)", display: false }] });
       // toy: sharply truncated kernel so that the unclipped spectrum has visible negative modes
       const rr = NUM.rng(seed), ns = 120, xs = [], ys = [];
@@ -471,12 +471,12 @@ const DEMOS = (() => {
         compute({ xs, ys, v, sig, g: gt, cv, zv: 25, zf: 1500, label: "toy: 120 stars, 64×64 grid" }, 1);
         draw();
       } else {
-        const c = V.comp.u, t = trainOf("u"), g = fullGrid(c);
+        const c = V.comp.u, t = trainOf("u"), g = fullGrid(c), useAlpha = mode === "alpha";
         $("mv-text").innerHTML = `computing the four steps on the whole visit (${t.xs.length} stars, ${g.nx}×${g.ny} grid, 2048² padded FFT)…`;
         Plotly.purge("mv-plot");
         setTimeout(() => { // let the message paint first
           const cv = fullConvolver("u");
-          compute({ xs: t.xs, ys: t.ys, v: t.y, sig: t.sig, g, cv, zv: 60, zf: null, label: `real visit: ${t.xs.length} stars, ${g.nx}×${g.ny} grid, ${cv.L}² padded FFT` }, DS);
+          compute({ xs: t.xs, ys: t.ys, v: useAlpha ? t.alpha : t.y, y: t.y, sig: t.sig, g, cv, zv: useAlpha ? NUM.absmax(t.alpha) / 3 : 60, zf: useAlpha ? 60 : null, alpha: useAlpha, label: `real visit (v = ${useAlpha ? "α" : "y"}): ${t.xs.length} stars, ${g.nx}×${g.ny} grid, ${cv.L}² padded FFT` }, DS);
           draw();
         }, 40);
       }
@@ -489,22 +489,24 @@ const DEMOS = (() => {
       [...$("mv-steps").children].forEach((li, i) => li.classList.toggle("active", i + 1 === step));
       const pts = (vals, title, zmax, unit) => Plotly.react("mv-plot", [{ type: mode === "toy" ? "scatter" : "scattergl", x: S.xs, y: S.ys, mode: "markers", marker: { size: mode === "toy" ? 9 : 3, color: vals, colorscale: SEISMIC, cmin: -zmax, cmax: zmax, colorbar: { thickness: 10, title: { text: unit, side: "right" } }, line: { width: mode === "toy" ? 0.5 : 0, color: "#333" } }, hovertemplate: "%{x:.3f}, %{y:.3f}<br>%{marker.color:.1f}<extra></extra>" }], Object.assign({}, BASE, { title: { text: title, font: { size: 13 } }, xaxis: { range: xr, title: "u (deg)", constrain: "domain", automargin: true }, yaxis: { range: yr, title: "v (deg)", scaleanchor: "x", constrain: "domain", automargin: true } }), CFG);
       const shown = (how) => (ds > 1 ? `, shown ${how} over ${ds}×${ds} nodes` : "");
-      if (step === 0) pts(S.v, `a vector v: one value per star (mas)${mode === "toy" ? "" : ": here the real residuals y"}`, S.zv, "v (mas)");
-      if (step === 1) heat("mv-plot", NUM.to2d(d1.img, d1.nx, d1.ny), a1.x, a1.y, { title: `step 1: Wᵀv (mas), the values deposited on the 4 nodes around each star${shown("summed")}`, zmax: S.zv, ctitle: "Wᵀv (mas)" });
-      if (step === 2) heat("mv-plot", NUM.to2d(d2.img, d2.nx, d2.ny), a2.x, a2.y, { title: `step 2: κ * (Wᵀv) (mas³) by padded FFT (${S.cv.L}×${S.cv.L}): the field these weights create everywhere${shown("averaged")}`, zmax: S.zf, ctitle: "κ * Wᵀv (mas³)" });
-      if (step === 3) pts(S.Kv, "step 3: read the field back at the stars (W): this is Kv (mas³)", S.zf, "Kv (mas³)");
-      if (step === 4) pts(S.Cv, "step 4: add σᵢ² vᵢ: Cv = Kv + Dv (mas³)", S.zf, "Cv (mas³)");
-      $("mv-text").innerHTML = `Cost per application: \\(O(N + N_g \\log N_g)\\) time, \\(O(N + N_g)\\) memory (dense: \\(O(N^3)\\), \\(O(N^2)\\)); the only operation the solver needs. ${S.label}: ${fmt(S.dt, 0)} ms here in your browser (~30 ms in treegp). Units: v in mas, \\(\\mathbf{C}\\) in mas², so \\(\\mathbf{K}\\mathbf{v}\\) and \\(\\mathbf{C}\\mathbf{v}\\) are in mas³.`;
+      const uv = S.alpha ? "mas⁻¹" : "mas", uk = S.alpha ? "mas" : "mas³";
+      if (step === 0) pts(S.v, S.alpha ? "the weights α from the solve of Eq. 3: one value per star (mas⁻¹)" : `a vector v: one value per star (mas)${mode === "toy" ? "" : ": here the real residuals y"}`, S.zv, `v (${uv})`);
+      if (step === 1) heat("mv-plot", NUM.to2d(d1.img, d1.nx, d1.ny), a1.x, a1.y, { title: `step 1: Wᵀv (${uv}), the values deposited on the 4 nodes around each star${shown("summed")}`, zmax: S.zv, ctitle: `Wᵀv (${uv})` });
+      if (step === 2) heat("mv-plot", NUM.to2d(d2.img, d2.nx, d2.ny), a2.x, a2.y, { title: `step 2: κ * (Wᵀv) (${uk}) by padded FFT (${S.cv.L}×${S.cv.L}): the field these weights create everywhere${shown("averaged")}`, zmax: S.zf, ctitle: `κ * Wᵀv (${uk})` });
+      if (step === 3) pts(S.Kv, `step 3: read the field back at the stars (W): this is Kv (${uk})`, S.zf, `Kv (${uk})`);
+      if (step === 4) pts(S.Cv, S.alpha ? `step 4: Cα = Kα + Dα = y, the data are recovered (rms |Cα − y| = ${fmt(Math.sqrt(S.Cv.reduce((t, c, i) => t + (c - S.y[i]) ** 2, 0) / S.Cv.length), 2)} mas, from the 4-digit rounding of the exported α; 1e-5 mas in treegp): Eq. 3 is solved` : `step 4: add σᵢ² vᵢ: Cv = Kv + Dv (${uk})`, S.zf, `Cv (${uk})`);
+      $("mv-text").innerHTML = `Cost per application: \\(O(N + N_g \\log N_g)\\) time, \\(O(N + N_g)\\) memory (dense: \\(O(N^3)\\), \\(O(N^2)\\)); the only operation the solver needs. Eq. 3 is the question (find α with Cα = y); Eq. 12 is the tool: a black box returning Cv for any v with one value per star. The conjugate gradient (next slide) calls it once per iteration on its current search direction, the first one being y divided star by star by its total variance; fed with the final α, it returns y. ${S.label}: ${fmt(S.dt, 0)} ms here in your browser (~30 ms in treegp). Units: \\(\\mathbf{C}\\) is in mas², so with v in ${uv} the results are in ${uk}.`;
       renderMathInElement($("mv-text"), { delimiters: [{ left: "\\(", right: "\\)", display: false }] });
     };
     setup();
     ["mv-0", "mv-1", "mv-2", "mv-3", "mv-4"].forEach((id, i) => $(id).addEventListener("click", () => { step = i; draw(); }));
     $("mv-play").addEventListener("click", () => { if (timer) { clearInterval(timer); timer = null; return; } step = 0; draw(); timer = setInterval(() => { step = (step + 1) % 5; draw(); if (step === 4) { clearInterval(timer); timer = null; } }, 1300); });
     $("mv-new").addEventListener("click", () => { if (mode !== "toy") return; seed = Math.floor(Math.random() * 1e9); step = 0; setup(); });
-    const setMode = (m) => { mode = m; toggle(["mv-toy", "mv-real"], `mv-${m}`); $("mv-tag").className = `tag ${m === "toy" ? "toy" : "real"}`; $("mv-tag").textContent = m === "toy" ? "toy" : "real visit"; $("mv-new").disabled = m !== "toy"; step = 0; setup(); };
+    const setMode = (m) => { mode = m; toggle(["mv-toy", "mv-real", "mv-alpha"], `mv-${m}`); $("mv-tag").className = `tag ${m === "toy" ? "toy" : "real"}`; $("mv-tag").textContent = m === "toy" ? "toy" : "real visit"; $("mv-new").disabled = m !== "toy"; step = 0; setup(); };
     $("mv-toy").addEventListener("click", () => setMode("toy"));
     $("mv-real").addEventListener("click", () => { if (V) setMode("real"); });
-    if (!V) $("mv-real").disabled = true;
+    $("mv-alpha").addEventListener("click", () => { if (V) setMode("alpha"); });
+    if (!V) { $("mv-real").disabled = true; $("mv-alpha").disabled = true; }
   }
 
   // =============================================================== 11. conjugate gradient (toy / real)
@@ -591,7 +593,7 @@ const DEMOS = (() => {
       const x = NUM.linspace(m.x0, m.x0 + (m.nx - 1) * m.h, m.nx), y = NUM.linspace(m.y0, m.y0 + (m.ny - 1) * m.h, m.ny);
       heat("f2-mean", m.img, x, y, { title: `mean field ŷ(X) for d${comp}: one convolution of Wᵀα, stored as an image (mas)`, zmax: 40, ctitle: "ŷ (mas)", hover: "%{x:.3f}, %{y:.3f}<br>%{z:.1f} mas<extra></extra>" });
       Plotly.react("f2-eb", ebTraces(V.eb, "all"), ebLayout("validation stars: before / after"), CFG);
-      $("f2-text").innerHTML = `Eq. 13: \\(\\hat y(\\mathbf{X}) = \\sum_j \\alpha_j\\, \\xi(\\mathbf{X} - \\mathbf{X}_j)\\). Once α is known, this applied everywhere is a field: the convolution of the kernel with the weights placed at the stars. On the grid, that is one more FFT convolution of Wᵀα, computed once per component (${fmt(c.t_predict, 2)} s here for ${V.meta.n_val} stars) and stored. Each of the 189 CCDs then reads its 30×30 prediction grid off this image by bilinear interpolation, at a cost independent of N; the dense approach needed an M×N cross-covariance matrix per CCD. Far from every star the field is zero. E-mode ${fmt(e0(V.eb.E_before), 0)} → ${fmt(e0(V.eb.E_after), 0)} mas²; rms per star ${fmt(V.meta.rms_before, 1)} → ${fmt(V.meta.rms_after, 1)} mas (the remainder is mostly the ${fmt(c.noise_median, 0)} mas photon noise of the simulation).`;
+      $("f2-text").innerHTML = `Eq. 13: \\(\\hat y(\\mathbf{X}) = \\sum_j \\alpha_j\\, \\xi(\\mathbf{X} - \\mathbf{X}_j)\\). Once α is known, this applied everywhere is a field: the convolution of the kernel with the weights placed at the stars. On the grid, that is one more FFT convolution of Wᵀα, computed once per component (${fmt(c.t_predict, 2)} s here for ${V.meta.n_val} stars) and stored. Each of the 189 CCDs then reads its 30×30 prediction grid off this image by bilinear interpolation, at a cost independent of N; the dense approach needed an M×N cross-covariance matrix per CCD. Far from every star the field is zero. E-mode ${fmt(e0(V.eb.E_before), 0)} → ${fmt(e0(V.eb.E_after), 0)} mas²; rms per star ${fmt(V.meta.rms_before, 1)} → ${fmt(V.meta.rms_after, 1)} mas (the remainder is mostly the ${fmt(c.noise_median, 0)} mas measurement noise of the sources).`;
       renderMathInElement($("f2-text"), { delimiters: [{ left: "\\(", right: "\\)", display: false }] });
     };
     bind(["f2-u", "f2-v"], (e) => { comp = e.target.id.endsWith("u") ? "u" : "v"; toggle(["f2-u", "f2-v"], e.target.id); draw(); });

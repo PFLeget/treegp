@@ -1,4 +1,4 @@
-"""Build data/visit.js for the TURBO-GP slides from a simulated Rubin visit
+"""Build data/visit.js for the TURBO-GP slides from a real LSSTCam visit
 (by default data/rubin_visit_2025052000348.npz, see --data) with treegp.
 
 Runs the TURBO-GP solver (empirical 2-pcf kernel + spectral solve) with the
@@ -164,7 +164,7 @@ def cg_history(eng, X, y, yerr, precond=True):
 
 
 def load_visit(path):
-    """Read the simulated visit from the original pickle or from the compact
+    """Read the visit from the original pickle or from the compact
     npz shipped with the slides (float32: u, v in deg; du, dv, du_err,
     dv_err in mas; visit, band)."""
     if path.endswith(".npz"):
@@ -196,7 +196,7 @@ def main():
     ap.add_argument(
         "--data",
         default=NPZ if os.path.exists(NPZ) else PKL,
-        help="simulated visit: the compact .npz or the original .pkl "
+        help="the LSSTCam visit: the compact .npz or the original .pkl "
         "(u, v in deg; du, dv, du_err, dv_err in mas)",
     )
     ap.add_argument("--no-l21", action="store_true", help="skip the L21 comparison fit")

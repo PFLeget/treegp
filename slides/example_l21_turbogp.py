@@ -1,4 +1,4 @@
-"""L21 and TURBO-GP on a simulated Rubin visit: the worked example of the
+"""L21 and TURBO-GP on a real LSSTCam visit: the worked example of the
 treegp documentation (docs/treegp_gp_interp.rst) and of the TURBO-GP slides.
 
 The visit (163k stars, astrometric residuals du, dv in mas with their
